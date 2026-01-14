@@ -1,6 +1,8 @@
 interface ProviderUserInfo {
   providerUid: string;
   email?: string;
+  displayName?: string;
+  photoURL?: string;
 }
 
 export async function verifyProviderToken(
@@ -23,24 +25,47 @@ export async function verifyProviderToken(
 }
 
 async function verifyGoogleToken(accessToken: string): Promise<ProviderUserInfo> {
-  const response = await fetch(
+  // First verify the token
+  const tokenResponse = await fetch(
     `https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`
   );
 
-  if (!response.ok) {
+  if (!tokenResponse.ok) {
     throw new Error('Invalid Google access token');
   }
 
-  const data = await response.json();
+  const tokenData = await tokenResponse.json();
+
+  // Then get user info for displayName and photo
+  const userInfoResponse = await fetch(
+    'https://www.googleapis.com/oauth2/v2/userinfo',
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  let displayName: string | undefined;
+  let photoURL: string | undefined;
+
+  if (userInfoResponse.ok) {
+    const userInfo = await userInfoResponse.json();
+    displayName = userInfo.name;
+    photoURL = userInfo.picture;
+  }
+
   return {
-    providerUid: data.sub,
-    email: data.email,
+    providerUid: tokenData.sub,
+    email: tokenData.email,
+    displayName,
+    photoURL,
   };
 }
 
 async function verifyFacebookToken(accessToken: string): Promise<ProviderUserInfo> {
   const response = await fetch(
-    `https://graph.facebook.com/me?fields=id,email&access_token=${accessToken}`
+    `https://graph.facebook.com/me?fields=id,email,name,picture.type(large)&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -51,6 +76,8 @@ async function verifyFacebookToken(accessToken: string): Promise<ProviderUserInf
   return {
     providerUid: data.id,
     email: data.email,
+    displayName: data.name,
+    photoURL: data.picture?.data?.url,
   };
 }
 
@@ -69,6 +96,7 @@ async function verifyMicrosoftToken(accessToken: string): Promise<ProviderUserIn
   return {
     providerUid: data.id,
     email: data.mail || data.userPrincipalName,
+    displayName: data.displayName,
   };
 }
 

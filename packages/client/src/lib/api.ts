@@ -23,6 +23,38 @@ export const linkProvider = async (
   return res.json();
 };
 
+export interface SocialLoginResponse {
+  success: boolean;
+  customToken?: string;
+  linked: boolean;
+  message: string;
+  email?: string;
+}
+
+/**
+ * Social login with proper provider linking.
+ * This prevents Google from overwriting existing password providers.
+ */
+export const socialLogin = async (
+  accessToken: string,
+  providerId: string,
+  idToken?: string
+): Promise<SocialLoginResponse> => {
+  const res = await fetch(`${API_URL}/api/auth/social-login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      accessToken,
+      idToken,
+      providerId,
+    }),
+  });
+
+  return res.json();
+};
+
 export const sendVerificationCode = async (
   email: string
 ): Promise<{ success: boolean; message: string }> => {

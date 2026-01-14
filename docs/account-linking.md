@@ -205,3 +205,205 @@ After linking, you can verify in the Firebase Console:
 1. Go to Authentication → Users
 2. Find the user by email
 3. The "Providers" column will show multiple provider icons (e.g., Google + Facebook)
+
+---
+
+## Special Case: Google + Password Provider
+
+### The Problem
+
+When a user has an existing **email/password** account and signs in with **Google** using the same email, Firebase may **overwrite** the password provider instead of throwing the `auth/account-exists-with-different-credential` error.
+
+This happens because Google is considered an **authoritative identity provider** for Google-hosted emails (like `@gmail.com`). From the [Firebase documentation](https://firebase.google.com/docs/auth/web/google-signin):
+
+> "Google serves as both an email and social identity provider. Email IDPs are authoritative for all email addresses related to their hosted email domain while social IDPs assert email identities based having done a one time confirmation of the email address. A user logging in with Google will never cause this error when their account is hosted at Google."
+
+**Result:** The user can no longer log in with their email/password after signing in with Google.
+
+### Solution: Backend-Controlled OAuth Flow
+
+To prevent this, we use a **backend-controlled OAuth flow** that intercepts the Google authentication and properly links the provider without overwriting the existing password provider.
+
+#### Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    GOOGLE + PASSWORD PRESERVATION FLOW                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+User clicks "Sign in with Google"
+         │
+         ▼
+┌─────────────────────┐
+│  signInWithPopup()  │
+│  (Google)           │
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│ Get credential + email      │
+│ (Before Firebase processes) │
+└─────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│ POST /api/auth/social-login │
+│ {                           │
+│   accessToken,              │
+│   providerId: "google.com"  │
+│ }                           │
+└─────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         BACKEND                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Verify Google token                                          │
+│    GET https://oauth2.googleapis.com/tokeninfo?access_token=T   │
+│    → Returns { sub: "google-uid", email }                       │
+│                                                                 │
+│ 2. Check if email has password provider                         │
+│    auth.getUserByEmail(email)                                   │
+│    → Check providerData for 'password'                          │
+│                                                                 │
+│ 3. If has password → LINK Google (preserve password)            │
+│    auth.updateUser(uid, {                                       │
+│      providerToLink: {                                          │
+│        providerId: "google.com",                                │
+│        uid: "google-uid"                                        │
+│      }                                                          │
+│    })                                                           │
+│                                                                 │
+│ 4. Create custom token for sign-in                              │
+│    auth.createCustomToken(uid)                                  │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│ { customToken, linked: true}│
+└─────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────┐
+│ signInWithCustomToken()     │
+│ (User signs in)             │
+└─────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ Redirect to Dashboard                       │
+│ User has BOTH providers:                    │
+│ - Password (preserved!)                     │
+│ - Google (newly linked)                     │
+└─────────────────────────────────────────────┘
+```
+
+#### Backend Implementation
+
+**Endpoint:** `POST /api/auth/social-login`
+
+```typescript
+router.post('/social-login', async (req, res) => {
+  const { accessToken, idToken, providerId } = req.body;
+
+  // 1. Verify the OAuth token with the provider
+  const providerInfo = await verifyProviderToken(providerId, accessToken, idToken);
+  const email = providerInfo.email;
+
+  // 2. Check if user exists
+  let user;
+  let hasPasswordProvider = false;
+  let linked = false;
+
+  try {
+    user = await auth.getUserByEmail(email);
+    hasPasswordProvider = user.providerData.some(p => p.providerId === 'password');
+
+    // 3. If has password, link the OAuth provider (preserving password)
+    if (hasPasswordProvider) {
+      const hasOAuthProvider = user.providerData.some(p => p.providerId === providerId);
+      if (!hasOAuthProvider) {
+        await auth.updateUser(user.uid, {
+          providerToLink: {
+            providerId: providerId,
+            uid: providerInfo.providerUid,
+          },
+        });
+        linked = true;
+      }
+    }
+  } catch (error: any) {
+    if (error.code === 'auth/user-not-found') {
+      // Create new user
+      user = await auth.createUser({
+        email: email,
+        emailVerified: true,
+      });
+      // Link the provider
+      await auth.updateUser(user.uid, {
+        providerToLink: {
+          providerId: providerId,
+          uid: providerInfo.providerUid,
+        },
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  // 4. Create custom token for frontend sign-in
+  const customToken = await auth.createCustomToken(user.uid);
+
+  return res.json({
+    success: true,
+    customToken,
+    linked,
+    message: linked ? 'Google linked to existing account' : 'Signed in successfully',
+  });
+});
+```
+
+#### Frontend Implementation
+
+```typescript
+const handleSocialLogin = async (provider: AuthProvider, providerName: string) => {
+  try {
+    // 1. Open popup to get credential
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    
+    // Get the credential for the provider
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    
+    if (credential?.accessToken) {
+      // 2. Call backend for proper linking
+      const response = await socialLogin(credential, 'google.com');
+      
+      if (response.success && response.customToken) {
+        // 3. Sign in with custom token
+        await signInWithCustomToken(auth, response.customToken);
+      }
+    }
+    
+    router.push('/dashboard');
+  } catch (err: any) {
+    // Handle errors...
+  }
+};
+```
+
+#### Key Benefits
+
+1. **Password Preserved**: Users can still log in with their email/password
+2. **Seamless UX**: No additional confirmation required
+3. **Secure**: Google OAuth already verifies email ownership
+4. **Multiple Providers**: User account shows both Google and password providers
+
+#### Verification
+
+After implementation, you can verify:
+1. Create an account with email/password
+2. Sign in with Google using the same email
+3. Sign out
+4. Sign in again with email/password → Should work!
+5. Check Firebase Console → User should have both "password" and "google.com" providers

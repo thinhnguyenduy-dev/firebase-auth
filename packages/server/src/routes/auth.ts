@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { auth } from '../config/firebase';
 import { verifyProviderToken } from '../services/providerVerifier';
+import { handleSocialAuth } from '../services/socialAuthService';
 import { generateCode, storeCode, verifyCode } from '../services/verificationStore';
 import { sendVerificationCode } from '../services/emailService';
 
@@ -76,6 +77,57 @@ router.post('/link-provider', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to link provider'
+    });
+  }
+});
+
+// Social login endpoint - handles OAuth login with proper provider linking
+// This prevents Google from overwriting existing password providers
+interface SocialLoginRequest {
+  accessToken: string;
+  providerId: string;
+  idToken?: string;
+}
+
+router.post('/social-login', async (req: Request, res: Response) => {
+  const { accessToken, providerId, idToken } = req.body as SocialLoginRequest;
+
+  if (!accessToken || !providerId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields: accessToken, providerId'
+    });
+  }
+
+  try {
+    const result = await handleSocialAuth(providerId, accessToken, idToken);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+
+  } catch (error: any) {
+    console.error('Error in social login:', error);
+
+    if (error.message?.includes('Invalid') || error.message?.includes('token')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired OAuth token'
+      });
+    }
+
+    if (error.message?.includes('Unsupported provider')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process social login'
     });
   }
 });

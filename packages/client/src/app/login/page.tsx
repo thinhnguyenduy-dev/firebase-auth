@@ -4,26 +4,29 @@ import { useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithCredential,
+  signInWithCustomToken,
   AuthProvider,
-  OAuthProvider,
-  GoogleAuthProvider,
-  FacebookAuthProvider
+  FacebookAuthProvider,
+  OAuthProvider
 } from 'firebase/auth';
-import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
+import { auth, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { linkProvider, syncUser } from '@/lib/api';
+import { socialLogin, syncUser } from '@/lib/api';
+import { useGoogleSignIn } from '@/components/GoogleSignInButton';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [linking, setLinking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const router = useRouter();
+  const { signIn: googleSignIn } = useGoogleSignIn();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
       await signInWithEmailAndPassword(auth, email, password);
       router.push('/dashboard');
@@ -32,53 +35,120 @@ export default function LoginPage() {
     }
   };
 
-  const handleSocialLogin = async (provider: AuthProvider) => {
+  // Custom Google Sign-In flow that sends token to backend FIRST
+  const handleGoogleLogin = async () => {
     setError('');
+    setStatusMessage('');
+    setLoading(true);
+
     try {
-      await signInWithPopup(auth, provider);
+      setStatusMessage('Opening Google Sign-In...');
+      
+      // Get access token from Google Identity Services (NOT Firebase)
+      googleSignIn(
+        async (accessToken: string) => {
+          try {
+            // Send to backend FIRST - before any Firebase auth happens
+            setStatusMessage('Setting up your account...');
+            console.log('Sending access token to backend...');
+            
+            const backendResult = await socialLogin(accessToken, 'google.com');
+            console.log('Backend result:', backendResult);
+
+            if (backendResult.success && backendResult.customToken) {
+              // Sign in with custom token from backend
+              setStatusMessage('Signing in...');
+              await signInWithCustomToken(auth, backendResult.customToken);
+              
+              if (backendResult.linked) {
+                console.log('Account linked successfully - password preserved!');
+              }
+              
+              // Sync user to database
+              const currentUser = auth.currentUser;
+              if (currentUser) {
+                await syncUser(currentUser);
+              }
+              
+              router.push('/dashboard');
+            } else {
+              setError(backendResult.message || 'Failed to sign in. Please try again.');
+              setLoading(false);
+              setStatusMessage('');
+            }
+          } catch (err: any) {
+            console.error('Backend error:', err);
+            setError(err.message || 'Failed to sign in. Please try again.');
+            setLoading(false);
+            setStatusMessage('');
+          }
+        },
+        (errorMsg: string) => {
+          setError(errorMsg);
+          setLoading(false);
+          setStatusMessage('');
+        }
+      );
+    } catch (err: any) {
+      console.error('Google sign-in error:', err);
+      setError(err.message || 'Failed to sign in with Google');
+      setLoading(false);
+      setStatusMessage('');
+    }
+  };
+
+  // Other social providers still use Firebase popup (they don't have the overwrite issue)
+  const handleOtherSocialLogin = async (provider: AuthProvider, providerName: string) => {
+    setError('');
+    setStatusMessage('');
+    setLoading(true);
+
+    try {
+      setStatusMessage(`Signing in with ${providerName}...`);
+      const result = await signInWithPopup(auth, provider);
+      
+      // Get access token
+      let accessToken: string | undefined;
+      let idToken: string | undefined;
+      let providerId: string;
+
+      if (provider === facebookProvider) {
+        const credential = FacebookAuthProvider.credentialFromResult(result);
+        accessToken = credential?.accessToken;
+        providerId = 'facebook.com';
+      } else {
+        const credential = OAuthProvider.credentialFromResult(result);
+        accessToken = credential?.accessToken;
+        idToken = credential?.idToken;
+        providerId = provider === microsoftProvider ? 'microsoft.com' : 'apple.com';
+      }
+
+      if (accessToken) {
+        // Call backend to ensure proper linking
+        setStatusMessage('Setting up your account...');
+        const backendResult = await socialLogin(accessToken, providerId, idToken);
+        console.log('Backend result:', backendResult);
+        
+        if (backendResult.linked) {
+          console.log('Account linked successfully!');
+        }
+      }
+
+      await syncUser(result.user);
       router.push('/dashboard');
     } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/account-exists-with-different-credential') {
-        // Extract credential from error
-        const credential = OAuthProvider.credentialFromError(err) ||
-          GoogleAuthProvider.credentialFromError(err) ||
-          FacebookAuthProvider.credentialFromError(err);
-        const email = err.customData?.email;
-
-        if (!email || !credential) {
-          setError('Could not link account. Please try logging in with your existing provider.');
-          return;
-        }
-
-        // Get provider ID from the credential
-        const providerId = credential.providerId;
-
-        try {
-          setLinking(true);
-          setError('Linking your accounts...');
-
-          // Call backend to link the provider
-          const result = await linkProvider(credential, providerId, email);
-
-          if (result.success) {
-            // Sign in directly using the credential (no popup needed)
-            const userCredential = await signInWithCredential(auth, credential);
-            // Sync user to database before redirecting
-            await syncUser(userCredential.user);
-            router.push('/dashboard');
-          } else {
-            setError(result.message || 'Failed to link accounts. Please try again.');
-          }
-        } catch (linkErr: any) {
-          console.error('Linking error:', linkErr);
-          setError('Failed to link accounts. Please try signing in with your original provider.');
-        } finally {
-          setLinking(false);
-        }
+      console.error('Social login error:', err);
+      
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in was cancelled');
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+        setError(`An account already exists with this email. Please sign in with your original method first.`);
       } else {
-        setError(err.message);
+        setError(err.message || 'Failed to sign in. Please try again.');
       }
+    } finally {
+      setLoading(false);
+      setStatusMessage('');
     }
   };
 
@@ -115,15 +185,21 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className={`text-sm ${linking ? 'text-blue-600' : 'text-red-500'}`}>
+            <p className="text-sm text-red-500">
               {error}
+            </p>
+          )}
+
+          {statusMessage && (
+            <p className="text-sm text-blue-600">
+              {statusMessage}
             </p>
           )}
 
           <div>
             <button
               type="submit"
-              disabled={linking}
+              disabled={loading}
               className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
             >
               Sign in
@@ -142,29 +218,29 @@ export default function LoginPage() {
 
         <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={() => handleSocialLogin(googleProvider)}
-            disabled={linking}
+            onClick={handleGoogleLogin}
+            disabled={loading}
             className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4] disabled:opacity-50"
           >
             Google
           </button>
           <button
-            onClick={() => handleSocialLogin(facebookProvider)}
-            disabled={linking}
+            onClick={() => handleOtherSocialLogin(facebookProvider, 'Facebook')}
+            disabled={loading}
             className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2] disabled:opacity-50"
           >
             Facebook
           </button>
           <button
-            onClick={() => handleSocialLogin(microsoftProvider)}
-            disabled={linking}
+            onClick={() => handleOtherSocialLogin(microsoftProvider, 'Microsoft')}
+            disabled={loading}
             className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F] disabled:opacity-50"
           >
             Microsoft
           </button>
           <button
-            onClick={() => handleSocialLogin(appleProvider)}
-            disabled={linking}
+            onClick={() => handleOtherSocialLogin(appleProvider, 'Apple')}
+            disabled={loading}
             className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
           >
             Apple
