@@ -14,12 +14,15 @@ import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvide
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { linkProvider, syncUser } from '@/lib/api';
+import AddPasswordModal from '@/components/AddPasswordModal';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [linking, setLinking] = useState(false);
+  const [showAddPasswordModal, setShowAddPasswordModal] = useState(false);
+  const [modalEmail, setModalEmail] = useState('');
   const router = useRouter();
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -28,7 +31,14 @@ export default function RegisterPage() {
       await createUserWithEmailAndPassword(auth, email, password);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/email-already-in-use') {
+        // Show modal to add password to existing account
+        setModalEmail(email);
+        setShowAddPasswordModal(true);
+        setError('');
+      } else {
+        setError(err.message);
+      }
     }
   };
 
@@ -177,6 +187,13 @@ export default function RegisterPage() {
             </Link>
           </div>
       </div>
+
+      {showAddPasswordModal && (
+        <AddPasswordModal
+          email={modalEmail}
+          onClose={() => setShowAddPasswordModal(false)}
+        />
+      )}
     </div>
   );
 }

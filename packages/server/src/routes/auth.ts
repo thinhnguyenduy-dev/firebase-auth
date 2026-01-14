@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { auth } from '../config/firebase';
 import { verifyProviderToken } from '../services/providerVerifier';
+import { generateCode, storeCode, verifyCode } from '../services/verificationStore';
+import { sendVerificationCode } from '../services/emailService';
 
 const router = Router();
 
@@ -74,6 +76,117 @@ router.post('/link-provider', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to link provider'
+    });
+  }
+});
+
+// Send verification code for adding password to existing OAuth account
+router.post('/send-verification', async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+
+  try {
+    // Check if user exists in Firebase
+    const existingUser = await auth.getUserByEmail(email);
+
+    // Check if user already has password provider
+    const hasPassword = existingUser.providerData.some(p => p.providerId === 'password');
+    if (hasPassword) {
+      return res.status(409).json({
+        success: false,
+        message: 'Account already has a password. Please use login instead.'
+      });
+    }
+
+    // Generate and store code
+    const code = generateCode();
+    storeCode(email, code);
+
+    // Send email
+    await sendVerificationCode(email, code);
+
+    return res.json({
+      success: true,
+      message: 'Verification code sent'
+    });
+
+  } catch (error: any) {
+    console.error('Error sending verification:', error);
+
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send verification code'
+    });
+  }
+});
+
+// Add password to existing OAuth account after verification
+router.post('/add-password', async (req: Request, res: Response) => {
+  const { email, code, password } = req.body;
+
+  if (!email || !code || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email, code, and password are required'
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 6 characters'
+    });
+  }
+
+  try {
+    // Verify the code
+    const isValid = verifyCode(email, code);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired verification code'
+      });
+    }
+
+    // Get the existing user
+    const existingUser = await auth.getUserByEmail(email);
+
+    // Add password to the user
+    await auth.updateUser(existingUser.uid, {
+      password: password
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password added successfully'
+    });
+
+  } catch (error: any) {
+    console.error('Error adding password:', error);
+
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add password'
     });
   }
 });

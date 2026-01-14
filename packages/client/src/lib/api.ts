@@ -23,6 +23,36 @@ export const linkProvider = async (
   return res.json();
 };
 
+export const sendVerificationCode = async (
+  email: string
+): Promise<{ success: boolean; message: string }> => {
+  const res = await fetch(`${API_URL}/api/auth/send-verification`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  return res.json();
+};
+
+export const addPasswordToAccount = async (
+  email: string,
+  code: string,
+  password: string
+): Promise<{ success: boolean; message: string }> => {
+  const res = await fetch(`${API_URL}/api/auth/add-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, code, password }),
+  });
+
+  return res.json();
+};
+
 export const syncUser = async (user: User) => {
   const token = await user.getIdToken();
   
