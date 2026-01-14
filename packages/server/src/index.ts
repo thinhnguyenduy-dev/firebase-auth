@@ -18,6 +18,10 @@ app.get('/', (req, res) => {
   res.send('Firebase Auth Monorepo Backend Running');
 });
 
+// Auth routes (account linking)
+import authRoutes from './routes/auth';
+app.use('/api/auth', authRoutes);
+
 // Protected route
 import { verifyToken, AuthRequest } from './middleware/auth';
 

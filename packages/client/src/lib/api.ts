@@ -1,6 +1,27 @@
-import { User } from 'firebase/auth';
+import { User, OAuthCredential } from 'firebase/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+export const linkProvider = async (
+  credential: OAuthCredential,
+  providerId: string,
+  email: string
+): Promise<{ success: boolean; message: string }> => {
+  const res = await fetch(`${API_URL}/api/auth/link-provider`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      accessToken: credential.accessToken,
+      idToken: credential.idToken,
+      providerId,
+      email,
+    }),
+  });
+
+  return res.json();
+};
 
 export const syncUser = async (user: User) => {
   const token = await user.getIdToken();

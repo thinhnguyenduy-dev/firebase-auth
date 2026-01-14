@@ -1,15 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { signInWithEmailAndPassword, signInWithPopup, AuthProvider } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithCredential,
+  AuthProvider,
+  OAuthProvider,
+  GoogleAuthProvider,
+  FacebookAuthProvider
+} from 'firebase/auth';
 import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { linkProvider } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [linking, setLinking] = useState(false);
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -23,12 +33,50 @@ export default function LoginPage() {
   };
 
   const handleSocialLogin = async (provider: AuthProvider) => {
+    setError('');
     try {
       await signInWithPopup(auth, provider);
       router.push('/dashboard');
     } catch (err: any) {
       console.error(err);
-      setError(err.message);
+      if (err.code === 'auth/account-exists-with-different-credential') {
+        // Extract credential from error
+        const credential = OAuthProvider.credentialFromError(err) ||
+          GoogleAuthProvider.credentialFromError(err) ||
+          FacebookAuthProvider.credentialFromError(err);
+        const email = err.customData?.email;
+
+        if (!email || !credential) {
+          setError('Could not link account. Please try logging in with your existing provider.');
+          return;
+        }
+
+        // Get provider ID from the credential
+        const providerId = credential.providerId;
+
+        try {
+          setLinking(true);
+          setError('Linking your accounts...');
+
+          // Call backend to link the provider
+          const result = await linkProvider(credential, providerId, email);
+
+          if (result.success) {
+            // Sign in directly using the credential (no popup needed)
+            await signInWithCredential(auth, credential);
+            router.push('/dashboard');
+          } else {
+            setError(result.message || 'Failed to link accounts. Please try again.');
+          }
+        } catch (linkErr: any) {
+          console.error('Linking error:', linkErr);
+          setError('Failed to link accounts. Please try signing in with your original provider.');
+        } finally {
+          setLinking(false);
+        }
+      } else {
+        setError(err.message);
+      }
     }
   };
 
@@ -64,12 +112,17 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && (
+            <p className={`text-sm ${linking ? 'text-blue-600' : 'text-red-500'}`}>
+              {error}
+            </p>
+          )}
 
           <div>
             <button
               type="submit"
-              className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              disabled={linking}
+              className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
             >
               Sign in
             </button>
@@ -88,25 +141,29 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => handleSocialLogin(googleProvider)}
-            className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4]"
+            disabled={linking}
+            className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4] disabled:opacity-50"
           >
             Google
           </button>
           <button
             onClick={() => handleSocialLogin(facebookProvider)}
-            className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2]"
+            disabled={linking}
+            className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2] disabled:opacity-50"
           >
             Facebook
           </button>
           <button
             onClick={() => handleSocialLogin(microsoftProvider)}
-            className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F]"
+            disabled={linking}
+            className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F] disabled:opacity-50"
           >
             Microsoft
           </button>
           <button
             onClick={() => handleSocialLogin(appleProvider)}
-            className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            disabled={linking}
+            className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
           >
             Apple
           </button>
