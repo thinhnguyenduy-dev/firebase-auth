@@ -6,8 +6,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces",
+    "dev": "concurrently \"npm run dev --workspace=@firebase-auth-monorepo/client\" \"npm run dev --workspace=@firebase-auth-monorepo/server\"",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

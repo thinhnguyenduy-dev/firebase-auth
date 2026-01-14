@@ -10,6 +10,10 @@ const port = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
 app.get('/', (req, res) => {
   res.send('Firebase Auth Monorepo Backend Running');
 });
@@ -22,6 +26,34 @@ app.get('/api/protected', verifyToken, (req: AuthRequest, res) => {
     message: 'This is a protected route',
     user: req.user
   });
+});
+
+app.post('/api/users/sync', verifyToken, async (req: AuthRequest, res) => {
+  const { uid, email } = req.user!;
+  const { name } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  try {
+    const user = await prisma.user.upsert({
+      where: { firebaseUid: uid },
+      update: {
+        email,
+        name,
+      },
+      create: {
+        firebaseUid: uid,
+        email,
+        name,
+      },
+    });
+    res.json(user);
+  } catch (error) {
+    console.error('Error syncing user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 });
 
 app.listen(port, () => {

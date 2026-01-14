@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, signInWithPopup, AuthProvider } from 'firebase/auth';
+import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -18,6 +18,16 @@ export default function RegisterPage() {
       await createUserWithEmailAndPassword(auth, email, password);
       router.push('/dashboard');
     } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleSocialLogin = async (provider: AuthProvider) => {
+    try {
+      await signInWithPopup(auth, provider);
+      router.push('/dashboard');
+    } catch (err: any) {
+      console.error(err);
       setError(err.message);
     }
   };
@@ -64,12 +74,49 @@ export default function RegisterPage() {
               Sign up
             </button>
           </div>
-          <div className="text-sm text-center">
+        </form>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300" />
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="bg-white px-2 text-gray-500">Or continue with</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => handleSocialLogin(googleProvider)}
+            className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4]"
+          >
+            Google
+          </button>
+          <button
+            onClick={() => handleSocialLogin(facebookProvider)}
+            className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2]"
+          >
+            Facebook
+          </button>
+          <button
+            onClick={() => handleSocialLogin(microsoftProvider)}
+            className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F]"
+          >
+            Microsoft
+          </button>
+          <button
+            onClick={() => handleSocialLogin(appleProvider)}
+            className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          >
+            Apple
+          </button>
+        </div>
+
+        <div className="text-sm text-center">
             <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500">
               Already have an account? Sign in
             </Link>
           </div>
-        </form>
       </div>
     </div>
   );
