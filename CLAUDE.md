@@ -52,3 +52,10 @@ This is a pnpm monorepo with two packages:
 3. Client sends token as `Authorization: Bearer <token>` header
 4. Server middleware verifies token with Firebase Admin SDK
 5. On first auth, client auto-syncs user to backend database
+
+### Account Linking
+When a user signs in with a provider (e.g., Facebook) but an account already exists with the same email from a different provider (e.g., Google), the accounts are automatically linked via the backend.
+
+- `src/services/providerVerifier.ts` - Verifies OAuth tokens with provider APIs
+- `src/routes/auth.ts` - `POST /api/auth/link-provider` endpoint uses Firebase Admin SDK's `providerToLink`
+- See [docs/account-linking.md](docs/account-linking.md) for detailed documentation

@@ -13,7 +13,7 @@ import {
 import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { linkProvider } from '@/lib/api';
+import { linkProvider, syncUser } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -63,7 +63,9 @@ export default function LoginPage() {
 
           if (result.success) {
             // Sign in directly using the credential (no popup needed)
-            await signInWithCredential(auth, credential);
+            const userCredential = await signInWithCredential(auth, credential);
+            // Sync user to database before redirecting
+            await syncUser(userCredential.user);
             router.push('/dashboard');
           } else {
             setError(result.message || 'Failed to link accounts. Please try again.');
