@@ -1,0 +1,78 @@
+# Firebase Auth Monorepo
+
+A full-stack monorepo application demonstrating Firebase Authentication.
+
+- **Frontend**: Next.js 14, Tailwind CSS, Firebase Client SDK
+- **Backend**: Express, TypeScript, Prisma (PostgreSQL), Firebase Admin SDK
+
+## Structure
+
+```
+/
+  packages/
+    client/  # Next.js Frontend
+    server/  # Express Backend
+```
+
+## Prerequisites
+
+- Node.js & npm/pnpm
+- PostgreSQL Database
+- Firebase Project (Email/Password Auth enabled)
+
+## Setup
+
+### 1. Installation
+
+```bash
+npm install
+# OR
+pnpm install
+```
+
+### 2. Backend Configuration (`packages/server`)
+
+Create `packages/server/.env` based on `.env.example`:
+
+```bash
+PORT=4000
+DATABASE_URL="postgresql://user:password@localhost:5432/dbname?schema=public"
+
+# Firebase Admin SDK
+FIREBASE_PROJECT_ID="your-project-id"
+FIREBASE_CLIENT_EMAIL="your-email@project.iam.gserviceaccount.com"
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+```
+
+Run migrations:
+```bash
+cd packages/server
+npx prisma generate
+npx prisma db push
+```
+
+### 3. Frontend Configuration (`packages/client`)
+
+Create `packages/client/.env.local`:
+
+```bash
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=app_id
+```
+
+## Running the App
+
+Run both frontend and backend concurrently from the root:
+
+```bash
+npm run dev
+# OR
+pnpm dev
+```
+
+- **Frontend**: [http://localhost:3000](http://localhost:3000)
+- **Backend**: [http://localhost:4000](http://localhost:4000)
