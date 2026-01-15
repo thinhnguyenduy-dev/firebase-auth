@@ -4,7 +4,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { syncUser } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -25,10 +24,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // Sync user to backend whenever auth state changes to signed-in
-        await syncUser(user);
-      }
+      // NOTE: We intentionally do NOT sync here
+      // Sync is handled explicitly after successful login/register
+      // to avoid race conditions with the checkMerge flow
       setUser(user);
       setLoading(false);
     });

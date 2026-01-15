@@ -11,6 +11,10 @@ export interface CheckMergeResponse {
   merged: boolean;
   customToken?: string;
   message: string;
+  // For password→social case: requires email verification first
+  needsVerification?: boolean;
+  providers?: string[];
+  email?: string;
 }
 
 /**

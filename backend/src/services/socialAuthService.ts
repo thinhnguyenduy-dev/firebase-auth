@@ -5,6 +5,10 @@ interface MergeAccountsResult {
   merged: boolean;
   customToken?: string;
   message: string;
+  // For password→social case: requires email verification first
+  needsVerification?: boolean;
+  providers?: string[];
+  email?: string;
 }
 
 /**
@@ -77,14 +81,34 @@ export async function checkAndMergeAccounts(
 
         // CASE 1: Current is social-only, target has password
         // Merge social (current) INTO password (target)
+        // SAFE: User authenticated with OAuth provider
         if (!currentHasPassword && targetHasPassword) {
           return await mergeSocialIntoPassword(currentUserUid, user.uid, currentUser);
         }
         
         // CASE 2: Current has password, target is social-only
-        // Merge social (target) INTO password (current)
+        // SECURITY: Require email verification before merging
+        // Otherwise anyone who knows the email could hijack the account
         if (currentHasPassword && !targetHasPassword && targetHasSocial) {
-          return await mergeOtherSocialIntoCurrentPassword(currentUserUid, user);
+          const socialProviders = user.providerData
+            .filter((p: any) => p.providerId !== 'password')
+            .map((p: any) => p.providerId);
+          
+          console.log(`[checkAndMergeAccounts] Password→Social merge detected. Requires verification.`);
+          console.log(`[checkAndMergeAccounts] Social providers: ${socialProviders.join(', ')}`);
+          
+          // Delete the newly created password account (we'll add password to social account after verification)
+          await auth.deleteUser(currentUserUid);
+          console.log(`Deleted password account ${currentUserUid} - user must verify email first`);
+          
+          return {
+            success: true,
+            merged: false,
+            needsVerification: true,
+            providers: socialProviders,
+            email: email,
+            message: `This email is already registered with ${socialProviders.join(', ')}. Please verify your email to add a password.`,
+          };
         }
 
         // CASE 3: Both are social-only (no password on either)

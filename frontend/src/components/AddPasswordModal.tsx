@@ -9,15 +9,17 @@ import { useRouter } from 'next/navigation';
 interface AddPasswordModalProps {
   email: string;
   onClose: () => void;
+  initialPassword?: string;
+  providers?: string[];
 }
 
 type Step = 'initial' | 'code-sent' | 'success';
 
-export default function AddPasswordModal({ email, onClose }: AddPasswordModalProps) {
+export default function AddPasswordModal({ email, onClose, initialPassword = '', providers = [] }: AddPasswordModalProps) {
   const [step, setStep] = useState<Step>('initial');
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [password, setPassword] = useState(initialPassword);
+  const [confirmPassword, setConfirmPassword] = useState(initialPassword);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();

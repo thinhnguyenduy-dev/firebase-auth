@@ -64,7 +64,42 @@ router.post('/send-verification', async (req: Request, res: Response) => {
   }
 
   try {
-    const existingUser = await auth.getUserByEmail(email);
+    // With "Create multiple accounts" setting, email might only be in providerData
+    // First try getUserByEmail, then fallback to searching all users
+    let existingUser;
+    
+    try {
+      existingUser = await auth.getUserByEmail(email);
+    } catch (e: any) {
+      if (e.code === 'auth/user-not-found') {
+        // Search all users for this email in providerData
+        const listResult = await auth.listUsers(1000);
+        for (const user of listResult.users) {
+          // Check user.email
+          if (user.email === email) {
+            existingUser = user;
+            break;
+          }
+          // Check providerData emails
+          for (const provider of user.providerData) {
+            if (provider.email === email) {
+              existingUser = user;
+              break;
+            }
+          }
+          if (existingUser) break;
+        }
+      } else {
+        throw e;
+      }
+    }
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    }
 
     const hasPassword = existingUser.providerData.some(p => p.providerId === 'password');
     if (hasPassword) {
@@ -84,13 +119,6 @@ router.post('/send-verification', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error sending verification:', error);
-
-    if (error.code === 'auth/user-not-found') {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email'
-      });
-    }
 
     return res.status(500).json({
       success: false,
@@ -128,9 +156,43 @@ router.post('/add-password', async (req: Request, res: Response) => {
       });
     }
 
-    const existingUser = await auth.getUserByEmail(email);
+    // With "Create multiple accounts" setting, email might only be in providerData
+    let existingUser;
+    
+    try {
+      existingUser = await auth.getUserByEmail(email);
+    } catch (e: any) {
+      if (e.code === 'auth/user-not-found') {
+        const listResult = await auth.listUsers(1000);
+        for (const user of listResult.users) {
+          if (user.email === email) {
+            existingUser = user;
+            break;
+          }
+          for (const provider of user.providerData) {
+            if (provider.email === email) {
+              existingUser = user;
+              break;
+            }
+          }
+          if (existingUser) break;
+        }
+      } else {
+        throw e;
+      }
+    }
 
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    }
+
+    // With "Create multiple accounts" setting, social account may have email only in providerData
+    // We need to set email at account level for signInWithEmailAndPassword to work
     await auth.updateUser(existingUser.uid, {
+      email: email,  // Set email at account level (required for email/password login)
       password: password
     });
 
@@ -140,13 +202,6 @@ router.post('/add-password', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error adding password:', error);
-
-    if (error.code === 'auth/user-not-found') {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email'
-      });
-    }
 
     return res.status(500).json({
       success: false,
