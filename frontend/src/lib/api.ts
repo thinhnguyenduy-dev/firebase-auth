@@ -3,63 +3,34 @@ import { User } from 'firebase/auth';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // ============================================================================
-// Account Merge API
+// Social Auth (Safe Flow)
 // ============================================================================
 
-export interface CheckMergeResponse {
+export interface GoogleLoginResponse {
   success: boolean;
-  merged: boolean;
+  action: 'signin' | 'link';
   customToken?: string;
-  message: string;
-  // For password→social case: requires email verification first
-  needsVerification?: boolean;
-  providers?: string[];
   email?: string;
+  message?: string;
 }
 
 /**
- * Check and merge duplicate accounts.
- * Called after signInWithPopup or createUserWithEmailAndPassword.
- * Handles all merge scenarios:
- * - Social → Password: Merge social into password account
- * - Password → Social: Merge social into password account  
- * - Social → Social: Merge newer into older account
+ * Handle Google Login safely to prevent password account overwrite.
+ * 
+ * Sends the Google ID Token to the backend to check for conflicts BEFORE
+ * signing in to Firebase.
+ * 
+ * Returns:
+ * - action: 'signin' -> No conflict, proceed with standard Google credential sign-in
+ * - action: 'link'   -> Conflict detected, use customToken to sign in, then Link credential
  */
-export const checkMerge = async (
-  currentUserUid: string
-): Promise<CheckMergeResponse> => {
-  const res = await fetch(`${API_URL}/api/auth/check-merge`, {
+export const googleSafeLogin = async (
+  accessToken: string
+): Promise<GoogleLoginResponse> => {
+  const res = await fetch(`${API_URL}/api/auth/google-start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ currentUserUid }),
-  });
-  return res.json();
-};
-
-// ============================================================================
-// Add Password to Social Account
-// ============================================================================
-
-export const sendVerificationCode = async (
-  email: string
-): Promise<{ success: boolean; message: string }> => {
-  const res = await fetch(`${API_URL}/api/auth/send-verification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
-  return res.json();
-};
-
-export const addPasswordToAccount = async (
-  email: string,
-  code: string,
-  password: string
-): Promise<{ success: boolean; message: string }> => {
-  const res = await fetch(`${API_URL}/api/auth/add-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, code, password }),
+    body: JSON.stringify({ accessToken }),
   });
   return res.json();
 };
@@ -67,6 +38,23 @@ export const addPasswordToAccount = async (
 // ============================================================================
 // User Sync
 // ============================================================================
+
+export const getProvidersForEmail = async (email: string): Promise<string[]> => {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/get-providers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    
+    if (!res.ok) throw new Error('Failed to fetch providers');
+    const data = await res.json();
+    return data.providers || [];
+  } catch (err) {
+    console.error('Error fetching providers:', err);
+    return [];
+  }
+};
 
 export const syncUser = async (user: User) => {
   const token = await user.getIdToken();

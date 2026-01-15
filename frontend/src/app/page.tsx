@@ -1,17 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithCustomToken,
+  signInWithCredential,
+  GoogleAuthProvider,
+  OAuthProvider,
   AuthProvider,
+  linkWithCredential
 } from 'firebase/auth';
 import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { checkMerge, syncUser } from '@/lib/api';
+import { googleSafeLogin, syncUser, getProvidersForEmail } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import Script from 'next/script';
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 export default function HomePage() {
   const [email, setEmail] = useState('');
@@ -19,8 +30,16 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  
+  // State for Account Linking (Popup Blocked Fix)
+  const [verificationNeeded, setVerificationNeeded] = useState(false);
+  const [pendingCred, setPendingCred] = useState<any>(null);
+  
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  
+  // Google Token Client ref
+  const tokenClient = useRef<any>(null);
 
   // Redirect to dashboard if already logged in
   useEffect(() => {
@@ -43,33 +62,102 @@ export default function HomePage() {
     }
   };
 
+  /**
+   * Initialize Google Token Client
+   */
+  const initGoogleClient = () => {
+    if (window.google) {
+      tokenClient.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        scope: 'email profile openid',
+        callback: async (tokenResponse: any) => {
+          if (tokenResponse.access_token) {
+            await handleGoogleSafeLogin(tokenResponse.access_token);
+          }
+        },
+      });
+    }
+  };
+
+  /**
+   * Handle Safe Google Login Flow
+   */
+  const handleGoogleSafeLogin = async (accessToken: string) => {
+    setStatusMessage('Verifying account...');
+    try {
+      // 1. Send Access Token to Backend for safe verification
+      const result = await googleSafeLogin(accessToken);
+
+      if (!result.success) {
+        throw new Error(result.message || 'Google login failed on server');
+      }
+
+      if (result.action === 'link') {
+        setStatusMessage('Linking specific account...');
+        
+        // 2a. LINK CASE: Sign in with Custom Token (as the password user)
+        if (!result.customToken) throw new Error('No custom token returned for linking');
+        
+        await signInWithCustomToken(auth, result.customToken);
+        
+        // 2b. Link the Google Credential to this user
+        // Note: We use the Access Token to create the credential
+        const credential = GoogleAuthProvider.credential(null, accessToken);
+        const currentUser = auth.currentUser;
+        
+        if (currentUser) {
+          await linkWithCredential(currentUser, credential);
+          await syncUser(currentUser);
+          setStatusMessage('Account successfully linked!');
+        }
+
+      } else {
+        // 2c. SIGNIN CASE: Standard Sign-In
+        setStatusMessage('Signing in...');
+        const credential = GoogleAuthProvider.credential(null, accessToken);
+        const userCred = await signInWithCredential(auth, credential);
+        await syncUser(userCred.user);
+      }
+
+      router.push('/dashboard');
+
+    } catch (err: any) {
+      console.error('Google Safe Login Error:', err);
+      // Handle "Credential already in use" if it happens during linking race condition
+      if (err.code === 'auth/credential-already-in-use') {
+        setError('This Google account is already linked to another user.');
+      } else {
+        setError(err.message || 'Failed to sign in with Google');
+      }
+    } finally {
+      setLoading(false);
+      setStatusMessage('');
+    }
+  };
+
   const handleSocialLogin = async (provider: AuthProvider, providerName: string) => {
     setError('');
     setStatusMessage('');
     setLoading(true);
 
+    // Special handling for Google to prevent overwrite
+    if (providerName === 'Google') {
+      if (tokenClient.current) {
+        // Trigger GIS Flow
+        tokenClient.current.requestAccessToken();
+      } else {
+        setError('Google Sign-In is not ready yet. Please refresh.');
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Standard Flow for other providers
     try {
       setStatusMessage(`Signing in with ${providerName}...`);
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
-      
-      setStatusMessage('Setting up your account...');
-      const mergeResult = await checkMerge(user.uid);
-      console.log('Merge check result:', mergeResult);
-
-      if (mergeResult.merged && mergeResult.customToken) {
-        console.log('Accounts merged! Signing in with merged account...');
-        setStatusMessage('Accounts linked successfully!');
-        await signInWithCustomToken(auth, mergeResult.customToken);
-        
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          await syncUser(currentUser);
-        }
-      } else {
-        await syncUser(user);
-      }
-
+      await syncUser(user);
       router.push('/dashboard');
 
     } catch (err: any) {
@@ -78,15 +166,105 @@ export default function HomePage() {
       if (err.code === 'auth/popup-closed-by-user') {
         setError('Sign-in was cancelled');
       } else if (err.code === 'auth/account-exists-with-different-credential') {
-        setError(`An account already exists with this email. Please sign in with your original method first.`);
+        const email = err.customData?.email;
+        const pendingCredential = OAuthProvider.credentialFromError(err);
+        
+        console.log('Merge Logic - Email:', email);
+        console.log('Merge Logic - Pending Credential:', pendingCredential);
+
+        if (email && pendingCredential) {
+          try {
+            // Check established providers (via Backend to bypass Enumeration Protection)
+            const methods = await getProvidersForEmail(email);
+            console.log('Merge Logic - Existing Methods:', methods);
+
+            if (methods.includes('google.com')) {
+              setStatusMessage('Existing Google account found.');
+              // Cannot auto-popup due to async delay blocking it.
+              // We must ask user to click.
+              setPendingCred(pendingCredential);
+              setVerificationNeeded(true);
+              return;
+            } else if (methods.includes('password')) {
+               setError(`An account already exists with ${email}. Please sign in with your password to link this account.`);
+            } else {
+               // Fallback
+               setError(`An account already exists with ${email}. Please sign in with your original provider.`);
+            }
+          } catch (linkErr: any) {
+            console.error('Linking error:', linkErr);
+            setError('Failed to link account: ' + linkErr.message);
+          }
+        } else {
+             console.warn('Merge Logic - Missing email or credential');
+             setError('An account already exists with this email.');
+        }
+
       } else {
         setError(err.message || 'Failed to sign in. Please try again.');
       }
     } finally {
-      setLoading(false);
-      setStatusMessage('');
+      if (!error) setLoading(false);
+      // setStatusMessage(''); // Keep status message if redirecting
     }
   };
+
+  const handleManualLink = async () => {
+    if (!pendingCred) return;
+    setLoading(true);
+    setStatusMessage('Verifying to link...');
+    try {
+       const result = await signInWithPopup(auth, googleProvider);
+       await linkWithCredential(result.user, pendingCred);
+       await syncUser(result.user);
+       setStatusMessage('Account successfully linked!');
+       router.push('/dashboard');
+    } catch (err: any) {
+      console.error('Manual Linking Error:', err);
+      setError('Failed to link: ' + err.message);
+      setVerificationNeeded(false);
+      setPendingCred(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // If verification needed, show special UI
+  if (verificationNeeded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+        <div className="relative w-full max-w-md backdrop-blur-xl bg-white/10 rounded-3xl shadow-2xl border border-white/20 p-8 space-y-6 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-yellow-500/20 text-yellow-500 mb-4">
+               <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+               </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-white">Account Conflict</h2>
+            <p className="text-white/80">
+              You already have a Google account registered with this email. 
+              Please verify with Google to link your Facebook account.
+            </p>
+            
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            
+            <button
+               onClick={handleManualLink}
+               disabled={loading}
+               className="w-full py-3 px-4 bg-white text-gray-900 font-bold rounded-xl hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
+            >
+               {loading ? 'Verifying...' : 'Verify with Google'}
+            </button>
+            
+            <button
+               onClick={() => { setVerificationNeeded(false); setPendingCred(null); setError(''); }}
+               className="text-white/40 text-sm hover:text-white"
+            >
+              Cancel
+            </button>
+        </div>
+      </div>
+    );
+  }
 
   // Show loading state while checking auth
   if (authLoading) {
@@ -104,6 +282,12 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+      <Script 
+        src="https://accounts.google.com/gsi/client" 
+        strategy="afterInteractive"
+        onLoad={initGoogleClient}
+      />
+
       {/* Decorative elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
@@ -194,6 +378,7 @@ export default function HomePage() {
 
           {/* Social Login Buttons */}
           <div className="grid grid-cols-2 gap-3">
+
             <button
               onClick={() => handleSocialLogin(googleProvider, 'Google')}
               disabled={loading}
