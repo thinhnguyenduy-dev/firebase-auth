@@ -36,20 +36,54 @@ app.post('/api/users/sync', verifyToken, async (req: AuthRequest, res) => {
   const { uid, email } = req.user!;
   const { name } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ message: 'Email is required' });
+  // Email might be missing for custom token sign-ins
+  // In that case, try to get it from Firebase Admin
+  let userEmail = email;
+  if (!userEmail) {
+    try {
+      const { auth } = await import('./config/firebase');
+      const firebaseUser = await auth.getUser(uid);
+      userEmail = firebaseUser.email || undefined;
+    } catch (e) {
+      console.error('Could not get user email from Firebase:', e);
+    }
+  }
+
+  if (!userEmail) {
+    // Still no email - just skip syncing for now
+    return res.json({ message: 'User synced without email', uid });
   }
 
   try {
+    // First, check if user with this email exists but with different UID
+    // This happens after account merge
+    const existingByEmail = await prisma.user.findUnique({
+      where: { email: userEmail },
+    });
+
+    if (existingByEmail && existingByEmail.firebaseUid !== uid) {
+      // Email exists with different UID - update the UID (account was merged)
+      console.log(`Updating firebaseUid for email ${userEmail}: ${existingByEmail.firebaseUid} -> ${uid}`);
+      const user = await prisma.user.update({
+        where: { email: userEmail },
+        data: {
+          firebaseUid: uid,
+          name,
+        },
+      });
+      return res.json(user);
+    }
+
+    // Normal upsert by firebaseUid
     const user = await prisma.user.upsert({
       where: { firebaseUid: uid },
       update: {
-        email,
+        email: userEmail,
         name,
       },
       create: {
         firebaseUid: uid,
-        email,
+        email: userEmail,
         name,
       },
     });

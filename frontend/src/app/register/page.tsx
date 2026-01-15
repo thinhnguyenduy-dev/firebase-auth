@@ -2,140 +2,111 @@
 
 import { useState } from 'react';
 import {
-  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signInWithPopup,
   signInWithCustomToken,
   AuthProvider,
+  GoogleAuthProvider,
   FacebookAuthProvider,
   OAuthProvider
 } from 'firebase/auth';
-import { auth, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
+import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { socialLogin, syncUser } from '@/lib/api';
-import { useGoogleSignIn } from '@/components/GoogleSignInButton';
+import { checkMerge, syncUser } from '@/lib/api';
+import AddPasswordModal from '@/components/AddPasswordModal';
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [showAddPasswordModal, setShowAddPasswordModal] = useState(false);
+  const [modalEmail, setModalEmail] = useState('');
   const router = useRouter();
-  const { signIn: googleSignIn } = useGoogleSignIn();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
+    
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // Create the password account
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const user = result.user;
+      
+      // Check if there's a social account with the same email to merge
+      setStatusMessage('Setting up your account...');
+      const mergeResult = await checkMerge(user.uid);
+      console.log('Merge check result:', mergeResult);
+
+      if (mergeResult.merged && mergeResult.customToken) {
+        // Password account was merged into social account
+        // (social account now has password provider)
+        console.log('Accounts merged! Password added to existing social account');
+        setStatusMessage('Account linked successfully!');
+        await signInWithCustomToken(auth, mergeResult.customToken);
+        
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          await syncUser(currentUser);
+        }
+      } else {
+        // No merge needed - sync the new user
+        await syncUser(user);
+      }
+      
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  // Custom Google Sign-In flow that sends token to backend FIRST
-  const handleGoogleLogin = async () => {
-    setError('');
-    setStatusMessage('');
-    setLoading(true);
-
-    try {
-      setStatusMessage('Opening Google Sign-In...');
-      
-      // Get access token from Google Identity Services (NOT Firebase)
-      googleSignIn(
-        async (accessToken: string) => {
-          try {
-            // Send to backend FIRST - before any Firebase auth happens
-            setStatusMessage('Setting up your account...');
-            console.log('Sending access token to backend...');
-            
-            const backendResult = await socialLogin(accessToken, 'google.com');
-            console.log('Backend result:', backendResult);
-
-            if (backendResult.success && backendResult.customToken) {
-              // Sign in with custom token from backend
-              setStatusMessage('Signing in...');
-              await signInWithCustomToken(auth, backendResult.customToken);
-              
-              if (backendResult.linked) {
-                console.log('Account linked successfully - password preserved!');
-              }
-              
-              // Sync user to database
-              const currentUser = auth.currentUser;
-              if (currentUser) {
-                await syncUser(currentUser);
-              }
-              
-              router.push('/dashboard');
-            } else {
-              setError(backendResult.message || 'Failed to sign in. Please try again.');
-              setLoading(false);
-              setStatusMessage('');
-            }
-          } catch (err: any) {
-            console.error('Backend error:', err);
-            setError(err.message || 'Failed to sign in. Please try again.');
-            setLoading(false);
-            setStatusMessage('');
-          }
-        },
-        (errorMsg: string) => {
-          setError(errorMsg);
-          setLoading(false);
-          setStatusMessage('');
-        }
-      );
-    } catch (err: any) {
-      console.error('Google sign-in error:', err);
-      setError(err.message || 'Failed to sign in with Google');
+      if (err.code === 'auth/email-already-in-use') {
+        // Show modal to add password to existing account
+        setModalEmail(email);
+        setShowAddPasswordModal(true);
+        setError('');
+      } else {
+        setError(err.message);
+      }
+    } finally {
       setLoading(false);
       setStatusMessage('');
     }
   };
 
-  // Other social providers still use Firebase popup (they don't have the overwrite issue)
-  const handleOtherSocialLogin = async (provider: AuthProvider, providerName: string) => {
+  const handleSocialLogin = async (provider: AuthProvider, providerName: string) => {
     setError('');
     setStatusMessage('');
     setLoading(true);
 
     try {
+      // Step 1: Normal signInWithPopup
       setStatusMessage(`Signing in with ${providerName}...`);
       const result = await signInWithPopup(auth, provider);
+      const user = result.user;
       
-      // Get access token
-      let accessToken: string | undefined;
-      let idToken: string | undefined;
-      let providerId: string;
+      // Step 2: Check if merge is needed (for duplicate account handling)
+      setStatusMessage('Setting up your account...');
+      const mergeResult = await checkMerge(user.uid);
+      console.log('Merge check result:', mergeResult);
 
-      if (provider === facebookProvider) {
-        const credential = FacebookAuthProvider.credentialFromResult(result);
-        accessToken = credential?.accessToken;
-        providerId = 'facebook.com';
-      } else {
-        const credential = OAuthProvider.credentialFromResult(result);
-        accessToken = credential?.accessToken;
-        idToken = credential?.idToken;
-        providerId = provider === microsoftProvider ? 'microsoft.com' : 'apple.com';
-      }
-
-      if (accessToken) {
-        // Call backend to ensure proper linking
-        setStatusMessage('Setting up your account...');
-        const backendResult = await socialLogin(accessToken, providerId, idToken);
-        console.log('Backend result:', backendResult);
+      if (mergeResult.merged && mergeResult.customToken) {
+        // Account was merged - sign in with the merged account
+        console.log('Accounts merged! Signing in with merged account...');
+        setStatusMessage('Accounts linked successfully!');
+        await signInWithCustomToken(auth, mergeResult.customToken);
         
-        if (backendResult.linked) {
-          console.log('Account linked successfully!');
+        // Sync the merged user
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          await syncUser(currentUser);
         }
+      } else {
+        // No merge needed - just sync the current user
+        await syncUser(user);
       }
 
-      await syncUser(result.user);
       router.push('/dashboard');
+
     } catch (err: any) {
       console.error('Social login error:', err);
       
@@ -157,10 +128,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-8 p-8 bg-white rounded-xl shadow-lg">
         <div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
-            Sign in to your account
+            Create your account
           </h2>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+        <form className="mt-8 space-y-6" onSubmit={handleRegister}>
           <div className="-space-y-px rounded-md shadow-sm">
             <div>
               <input
@@ -202,7 +173,7 @@ export default function LoginPage() {
               disabled={loading}
               className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
             >
-              Sign in
+              Sign up
             </button>
           </div>
         </form>
@@ -218,28 +189,28 @@ export default function LoginPage() {
 
         <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={handleGoogleLogin}
+            onClick={() => handleSocialLogin(googleProvider, 'Google')}
             disabled={loading}
             className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4] disabled:opacity-50"
           >
             Google
           </button>
           <button
-            onClick={() => handleOtherSocialLogin(facebookProvider, 'Facebook')}
+            onClick={() => handleSocialLogin(facebookProvider, 'Facebook')}
             disabled={loading}
             className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2] disabled:opacity-50"
           >
             Facebook
           </button>
           <button
-            onClick={() => handleOtherSocialLogin(microsoftProvider, 'Microsoft')}
+            onClick={() => handleSocialLogin(microsoftProvider, 'Microsoft')}
             disabled={loading}
             className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F] disabled:opacity-50"
           >
             Microsoft
           </button>
           <button
-            onClick={() => handleOtherSocialLogin(appleProvider, 'Apple')}
+            onClick={() => handleSocialLogin(appleProvider, 'Apple')}
             disabled={loading}
             className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
           >
@@ -248,11 +219,18 @@ export default function LoginPage() {
         </div>
 
         <div className="text-sm text-center">
-            <Link href="/register" className="font-semibold text-indigo-600 hover:text-indigo-500">
-              Don't have an account? Register
+            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500">
+              Already have an account? Sign in
             </Link>
           </div>
       </div>
+
+      {showAddPasswordModal && (
+        <AddPasswordModal
+          email={modalEmail}
+          onClose={() => setShowAddPasswordModal(false)}
+        />
+      )}
     </div>
   );
 }

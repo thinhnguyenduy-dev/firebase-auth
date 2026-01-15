@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { auth } from '../config/firebase';
 import { verifyProviderToken } from '../services/providerVerifier';
-import { handleSocialAuth } from '../services/socialAuthService';
+import { handleSocialAuth, checkAndMergeAccounts } from '../services/socialAuthService';
 import { generateCode, storeCode, verifyCode } from '../services/verificationStore';
 import { sendVerificationCode } from '../services/emailService';
 
@@ -128,6 +128,39 @@ router.post('/social-login', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to process social login'
+    });
+  }
+});
+
+// Check and merge duplicate accounts
+// Called after signInWithPopup when using "Create multiple accounts" Firebase setting
+// This detects if the current user is a duplicate and merges it with the password account
+interface CheckMergeRequest {
+  currentUserUid: string;
+}
+
+router.post('/check-merge', async (req: Request, res: Response) => {
+  const { currentUserUid } = req.body as CheckMergeRequest;
+
+  if (!currentUserUid) {
+    return res.status(400).json({
+      success: false,
+      merged: false,
+      message: 'Missing required field: currentUserUid'
+    });
+  }
+
+  try {
+    const result = await checkAndMergeAccounts(currentUserUid);
+    return res.json(result);
+
+  } catch (error: any) {
+    console.error('Error in check-merge:', error);
+
+    return res.status(500).json({
+      success: false,
+      merged: false,
+      message: 'Failed to check/merge accounts'
     });
   }
 });

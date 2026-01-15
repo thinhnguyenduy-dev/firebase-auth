@@ -3,12 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "frontend",
+    "backend"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=@firebase-auth-monorepo/client\" \"npm run dev --workspace=@firebase-auth-monorepo/server\"",
-    "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces"
+    "dev": "concurrently \"pnpm --filter @firebase-auth-monorepo/client dev\" \"pnpm --filter @firebase-auth-monorepo/server dev\"",
+    "dev:frontend": "pnpm --filter @firebase-auth-monorepo/client dev",
+    "dev:backend": "pnpm --filter @firebase-auth-monorepo/server dev",
+    "build": "pnpm -r build",
+    "build:frontend": "pnpm --filter @firebase-auth-monorepo/client build",
+    "build:backend": "pnpm --filter @firebase-auth-monorepo/server build",
+    "test": "pnpm -r test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

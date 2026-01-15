@@ -55,6 +55,32 @@ export const socialLogin = async (
   return res.json();
 };
 
+export interface CheckMergeResponse {
+  success: boolean;
+  merged: boolean;
+  customToken?: string;
+  message: string;
+}
+
+/**
+ * Check and merge duplicate accounts.
+ * Called after signInWithPopup when using "Create multiple accounts" Firebase setting.
+ * If a password account exists with the same email, merges the current account into it.
+ */
+export const checkMerge = async (
+  currentUserUid: string
+): Promise<CheckMergeResponse> => {
+  const res = await fetch(`${API_URL}/api/auth/check-merge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ currentUserUid }),
+  });
+
+  return res.json();
+};
+
 export const sendVerificationCode = async (
   email: string
 ): Promise<{ success: boolean; message: string }> => {

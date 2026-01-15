@@ -21,6 +21,8 @@ export const auth = getAuth(app);
 
 // Auth Providers
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 
 // Facebook provider with email scope (required for account linking)
 export const facebookProvider = new FacebookAuthProvider();
