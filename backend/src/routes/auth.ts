@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { auth } from '../config/firebase';
-import { checkAndMergeAccounts } from '../services/socialAuthService';
+import { checkAndMergeAccounts } from '../services/accountMergeService';
 import { generateCode, storeCode, verifyCode } from '../services/verificationStore';
 import { sendVerificationCode } from '../services/emailService';
 
