@@ -2,16 +2,15 @@
 
 A full-stack monorepo application demonstrating Firebase Authentication.
 
-- **Frontend**: Next.js 14, Tailwind CSS, Firebase Client SDK
+- **Frontend**: Next.js 16, Tailwind CSS, Firebase Client SDK
 - **Backend**: Express, TypeScript, Prisma (PostgreSQL), Firebase Admin SDK
 
 ## Structure
 
 ```
 /
-  packages/
-    client/  # Next.js Frontend
-    server/  # Express Backend
+  frontend/  # Next.js Frontend
+  backend/   # Express Backend
 ```
 
 ## Prerequisites
@@ -25,14 +24,12 @@ A full-stack monorepo application demonstrating Firebase Authentication.
 ### 1. Installation
 
 ```bash
-npm install
-# OR
 pnpm install
 ```
 
-### 2. Backend Configuration (`packages/server`)
+### 2. Backend Configuration (`backend`)
 
-Create `packages/server/.env` based on `.env.example`:
+Create `backend/.env` based on `.env.example`:
 
 ```bash
 PORT=4000
@@ -46,14 +43,14 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 
 Run migrations:
 ```bash
-cd packages/server
+cd backend
 npx prisma generate
 npx prisma db push
 ```
 
-### 3. Frontend Configuration (`packages/client`)
+### 3. Frontend Configuration (`frontend`)
 
-Create `packages/client/.env.local`:
+Create `frontend/.env.local`:
 
 ```bash
 NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
@@ -69,9 +66,14 @@ NEXT_PUBLIC_FIREBASE_APP_ID=app_id
 Run both frontend and backend concurrently from the root:
 
 ```bash
-npm run dev
-# OR
 pnpm dev
+```
+
+Or run them individually:
+
+```bash
+pnpm dev:frontend  # Run only frontend
+pnpm dev:backend   # Run only backend
 ```
 
 - **Frontend**: [http://localhost:3000](http://localhost:3000)

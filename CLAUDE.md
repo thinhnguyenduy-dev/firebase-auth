@@ -11,6 +11,10 @@ pnpm install
 # Run both client and server in development
 pnpm dev
 
+# Run individual services
+pnpm dev:frontend  # Run only frontend
+pnpm dev:backend   # Run only backend
+
 # Build all packages
 pnpm build
 
@@ -21,7 +25,7 @@ pnpm --filter @firebase-auth-monorepo/server dev
 # Lint (client only)
 pnpm --filter @firebase-auth-monorepo/client lint
 
-# Prisma commands (run from packages/server)
+# Prisma commands (run from backend folder)
 npx prisma generate    # Generate Prisma client
 npx prisma db push     # Push schema to database
 npx prisma migrate dev # Create and apply migrations
@@ -31,14 +35,14 @@ npx prisma migrate dev # Create and apply migrations
 
 This is a pnpm monorepo with two packages:
 
-### packages/client (Next.js 16)
+### frontend (Next.js 16)
 - **Auth flow**: Firebase Client SDK handles authentication (email/password + OAuth providers)
 - `src/lib/firebase.ts` - Firebase app initialization and auth providers (Google, Facebook, Microsoft, Apple)
 - `src/context/AuthContext.tsx` - React context providing `user`, `loading`, and `signOut`; auto-syncs users to backend on auth state change
 - `src/lib/api.ts` - Backend API calls with Firebase ID token in Authorization header
 - Uses Tailwind CSS v4 with `@tailwindcss/postcss`
 
-### packages/server (Express + TypeScript)
+### backend (Express + TypeScript)
 - **Auth verification**: Firebase Admin SDK verifies ID tokens from client
 - `src/config/firebase.ts` - Firebase Admin initialization from env vars
 - `src/middleware/auth.ts` - `verifyToken` middleware extracts and validates Bearer token, attaches `user` to request
