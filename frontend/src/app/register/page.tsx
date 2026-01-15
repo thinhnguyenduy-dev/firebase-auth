@@ -21,7 +21,6 @@ export default function RegisterPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [showAddPasswordModal, setShowAddPasswordModal] = useState(false);
   const [modalEmail, setModalEmail] = useState('');
-  const [modalProviders, setModalProviders] = useState<string[]>([]);
   const router = useRouter();
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -47,7 +46,6 @@ export default function RegisterPage() {
         
         // Show the AddPasswordModal for verified password addition
         setModalEmail(mergeResult.email || email);
-        setModalProviders(mergeResult.providers || []);
         setShowAddPasswordModal(true);
         setError(`This email is already registered with ${mergeResult.providers?.join(', ')}. Please verify your email to add a password.`);
         return;
@@ -286,7 +284,6 @@ export default function RegisterPage() {
           email={modalEmail}
           onClose={() => setShowAddPasswordModal(false)}
           initialPassword={password}
-          providers={modalProviders}
         />
       )}
     </div>

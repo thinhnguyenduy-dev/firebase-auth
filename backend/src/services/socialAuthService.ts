@@ -164,38 +164,6 @@ async function mergeSocialIntoPassword(
   return { success: true, merged: true, customToken, message: 'Social account merged into password account' };
 }
 
-async function mergeOtherSocialIntoCurrentPassword(
-  currentPasswordUid: string,
-  otherSocialUser: any
-): Promise<MergeAccountsResult> {
-  console.log(`[merge] Social account ${otherSocialUser.uid} INTO password account ${currentPasswordUid}`);
-  
-  const providersToLink = otherSocialUser.providerData
-    .filter((p: any) => p.providerId !== 'password')
-    .map((p: any) => ({ providerId: p.providerId, uid: p.uid }));
-  
-  console.log('Providers to link:', providersToLink);
-
-  // Delete social account first
-  await auth.deleteUser(otherSocialUser.uid);
-  console.log(`Deleted social account ${otherSocialUser.uid}`);
-  
-  // Link providers to current password account
-  for (const provider of providersToLink) {
-    try {
-      await auth.updateUser(currentPasswordUid, {
-        providerToLink: { providerId: provider.providerId, uid: provider.uid },
-      });
-      console.log(`Linked ${provider.providerId} to password account ${currentPasswordUid}`);
-    } catch (linkErr: any) {
-      console.error(`Failed to link ${provider.providerId}:`, linkErr.message);
-    }
-  }
-  
-  // Current user stays signed in - no custom token needed
-  return { success: true, merged: true, message: 'Social providers merged into password account' };
-}
-
 async function mergeSocialIntoSocial(
   newerSocialUid: string,
   olderSocialUid: string,

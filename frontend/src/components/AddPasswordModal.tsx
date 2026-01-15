@@ -10,12 +10,11 @@ interface AddPasswordModalProps {
   email: string;
   onClose: () => void;
   initialPassword?: string;
-  providers?: string[];
 }
 
 type Step = 'initial' | 'code-sent' | 'success';
 
-export default function AddPasswordModal({ email, onClose, initialPassword = '', providers = [] }: AddPasswordModalProps) {
+export default function AddPasswordModal({ email, onClose, initialPassword = '' }: AddPasswordModalProps) {
   const [step, setStep] = useState<Step>('initial');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState(initialPassword);
