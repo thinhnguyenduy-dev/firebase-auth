@@ -1,4 +1,4 @@
-# Firebase Auth Monorepo
+# Firebase Authentication Demo
 
 A full-stack monorepo application demonstrating Firebase Authentication.
 

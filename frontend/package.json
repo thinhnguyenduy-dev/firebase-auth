@@ -1,5 +1,5 @@
 {
-  "name": "@firebase-auth-monorepo/client",
+  "name": "@firebase-auth-demo/client",
   "version": "0.1.0",
   "private": true,
   "scripts": {

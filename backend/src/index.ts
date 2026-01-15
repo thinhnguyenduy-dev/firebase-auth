@@ -36,14 +36,27 @@ app.post('/api/users/sync', verifyToken, async (req: AuthRequest, res) => {
   const { uid, email } = req.user!;
   const { name } = req.body;
 
-  // Email might be missing for custom token sign-ins
-  // In that case, try to get it from Firebase Admin
+  // Email might be missing for social logins with "Create multiple accounts" setting
+  // In that case, try to get it from Firebase Admin (including providerData)
   let userEmail = email;
   if (!userEmail) {
     try {
       const { auth } = await import('./config/firebase');
       const firebaseUser = await auth.getUser(uid);
-      userEmail = firebaseUser.email || undefined;
+      
+      // Check user.email first
+      userEmail = firebaseUser.email;
+      
+      // If not found, check providerData
+      if (!userEmail && firebaseUser.providerData.length > 0) {
+        for (const provider of firebaseUser.providerData) {
+          if (provider.email) {
+            userEmail = provider.email;
+            console.log(`[syncUser] Got email from provider ${provider.providerId}: ${userEmail}`);
+            break;
+          }
+        }
+      }
     } catch (e) {
       console.error('Could not get user email from Firebase:', e);
     }

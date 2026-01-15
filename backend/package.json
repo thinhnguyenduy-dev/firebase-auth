@@ -1,5 +1,5 @@
 {
-  "name": "@firebase-auth-monorepo/server",
+  "name": "@firebase-auth-demo/server",
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {

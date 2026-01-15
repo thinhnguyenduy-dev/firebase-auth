@@ -38,7 +38,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     await firebaseSignOut(auth);
-    router.push('/login');
+    router.push('/');
   };
 
   return (

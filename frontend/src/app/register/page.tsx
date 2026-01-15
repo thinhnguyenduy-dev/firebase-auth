@@ -6,9 +6,6 @@ import {
   signInWithPopup,
   signInWithCustomToken,
   AuthProvider,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
-  OAuthProvider
 } from 'firebase/auth';
 import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
@@ -32,18 +29,14 @@ export default function RegisterPage() {
     setLoading(true);
     
     try {
-      // Create the password account
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const user = result.user;
       
-      // Check if there's a social account with the same email to merge
       setStatusMessage('Setting up your account...');
       const mergeResult = await checkMerge(user.uid);
       console.log('Merge check result:', mergeResult);
 
       if (mergeResult.merged && mergeResult.customToken) {
-        // Password account was merged into social account
-        // (social account now has password provider)
         console.log('Accounts merged! Password added to existing social account');
         setStatusMessage('Account linked successfully!');
         await signInWithCustomToken(auth, mergeResult.customToken);
@@ -53,14 +46,12 @@ export default function RegisterPage() {
           await syncUser(currentUser);
         }
       } else {
-        // No merge needed - sync the new user
         await syncUser(user);
       }
       
       router.push('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
-        // Show modal to add password to existing account
         setModalEmail(email);
         setShowAddPasswordModal(true);
         setError('');
@@ -79,29 +70,24 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // Step 1: Normal signInWithPopup
       setStatusMessage(`Signing in with ${providerName}...`);
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
-      // Step 2: Check if merge is needed (for duplicate account handling)
       setStatusMessage('Setting up your account...');
       const mergeResult = await checkMerge(user.uid);
       console.log('Merge check result:', mergeResult);
 
       if (mergeResult.merged && mergeResult.customToken) {
-        // Account was merged - sign in with the merged account
         console.log('Accounts merged! Signing in with merged account...');
         setStatusMessage('Accounts linked successfully!');
         await signInWithCustomToken(auth, mergeResult.customToken);
         
-        // Sync the merged user
         const currentUser = auth.currentUser;
         if (currentUser) {
           await syncUser(currentUser);
         }
       } else {
-        // No merge needed - just sync the current user
         await syncUser(user);
       }
 
@@ -124,105 +110,158 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md space-y-8 p-8 bg-white rounded-xl shadow-lg">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
-            Create your account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleRegister}>
-          <div className="-space-y-px rounded-md shadow-sm">
-            <div>
-              <input
-                type="email"
-                required
-                className="relative block w-full rounded-t-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 px-3"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+      {/* Decorative elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse" style={{ animationDelay: '2s' }}></div>
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Glass card */}
+        <div className="backdrop-blur-xl bg-white/10 rounded-3xl shadow-2xl border border-white/20 p-8 space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg mb-4">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
             </div>
-            <div>
-              <input
-                type="password"
-                required
-                className="relative block w-full rounded-b-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 px-3"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">
+              Create Account
+            </h1>
+            <p className="text-white/60">
+              Join us and get started today
+            </p>
           </div>
 
-          {error && (
-            <p className="text-sm text-red-500">
-              {error}
-            </p>
-          )}
+          {/* Register Form */}
+          <form className="space-y-5" onSubmit={handleRegister}>
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all duration-200"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </div>
 
-          {statusMessage && (
-            <p className="text-sm text-blue-600">
-              {statusMessage}
-            </p>
-          )}
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
 
-          <div>
+            {statusMessage && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <svg className="w-5 h-5 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="text-sm text-blue-400">{statusMessage}</p>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
-              className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
             >
-              Sign up
+              {loading ? 'Creating account...' : 'Create account'}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white/10" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-transparent text-white/40">Or continue with</span>
+            </div>
+          </div>
+
+          {/* Social Login Buttons */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => handleSocialLogin(googleProvider, 'Google')}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-white hover:bg-gray-100 text-gray-800 font-medium rounded-xl transition-all duration-200 disabled:opacity-50 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Google
+            </button>
+            <button
+              onClick={() => handleSocialLogin(facebookProvider, 'Facebook')}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-[#1877F2] hover:bg-[#166fe5] text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              Facebook
+            </button>
+            <button
+              onClick={() => handleSocialLogin(microsoftProvider, 'Microsoft')}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-[#2F2F2F] hover:bg-[#404040] text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#F25022" d="M1 1h10v10H1z"/>
+                <path fill="#00A4EF" d="M1 13h10v10H1z"/>
+                <path fill="#7FBA00" d="M13 1h10v10H13z"/>
+                <path fill="#FFB900" d="M13 13h10v10H13z"/>
+              </svg>
+              Microsoft
+            </button>
+            <button
+              onClick={() => handleSocialLogin(appleProvider, 'Apple')}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-black hover:bg-gray-900 text-white font-medium rounded-xl border border-white/10 transition-all duration-200 disabled:opacity-50 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+              </svg>
+              Apple
             </button>
           </div>
-        </form>
 
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-white px-2 text-gray-500">Or continue with</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => handleSocialLogin(googleProvider, 'Google')}
-            disabled={loading}
-            className="flex w-full justify-center rounded-md bg-white border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4285F4] disabled:opacity-50"
-          >
-            Google
-          </button>
-          <button
-            onClick={() => handleSocialLogin(facebookProvider, 'Facebook')}
-            disabled={loading}
-            className="flex w-full justify-center rounded-md bg-[#1877F2] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#166fe5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1877F2] disabled:opacity-50"
-          >
-            Facebook
-          </button>
-          <button
-            onClick={() => handleSocialLogin(microsoftProvider, 'Microsoft')}
-            disabled={loading}
-            className="flex w-full justify-center rounded-md bg-[#2F2F2F] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2F2F2F]/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F2F2F] disabled:opacity-50"
-          >
-            Microsoft
-          </button>
-          <button
-            onClick={() => handleSocialLogin(appleProvider, 'Apple')}
-            disabled={loading}
-            className="flex w-full justify-center rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
-          >
-            Apple
-          </button>
-        </div>
-
-        <div className="text-sm text-center">
-            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500">
-              Already have an account? Sign in
+          {/* Login Link */}
+          <p className="text-center text-white/60">
+            Already have an account?{' '}
+            <Link href="/" className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors">
+              Sign in
             </Link>
-          </div>
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="text-center text-white/30 text-sm mt-8">
+          Firebase Authentication Demo
+        </p>
       </div>
 
       {showAddPasswordModal && (

@@ -1,5 +1,5 @@
 {
-  "name": "firebase-auth-monorepo",
+  "name": "firebase-auth-demo",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
@@ -7,12 +7,12 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently \"pnpm --filter @firebase-auth-monorepo/client dev\" \"pnpm --filter @firebase-auth-monorepo/server dev\"",
-    "dev:frontend": "pnpm --filter @firebase-auth-monorepo/client dev",
-    "dev:backend": "pnpm --filter @firebase-auth-monorepo/server dev",
+    "dev": "concurrently \"pnpm --filter @firebase-auth-demo/client dev\" \"pnpm --filter @firebase-auth-demo/server dev\"",
+    "dev:frontend": "pnpm --filter @firebase-auth-demo/client dev",
+    "dev:backend": "pnpm --filter @firebase-auth-demo/server dev",
     "build": "pnpm -r build",
-    "build:frontend": "pnpm --filter @firebase-auth-monorepo/client build",
-    "build:backend": "pnpm --filter @firebase-auth-monorepo/server build",
+    "build:frontend": "pnpm --filter @firebase-auth-demo/client build",
+    "build:backend": "pnpm --filter @firebase-auth-demo/server build",
     "test": "pnpm -r test"
   },
   "devDependencies": {
