@@ -78,3 +78,7 @@ pnpm dev:backend   # Run only backend
 
 - **Frontend**: [http://localhost:3000](http://localhost:3000)
 - **Backend**: [http://localhost:4000](http://localhost:4000)
+
+## Documentation
+
+- [Firebase Account Linking](./docs/FIREBASE_ACCOUNT_LINKING.md) - Detailed guide on the "Link accounts that use the same email" setting and how this app implements secure multi-provider authentication.

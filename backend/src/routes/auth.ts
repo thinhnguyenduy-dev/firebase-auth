@@ -1,65 +1,59 @@
 import { Router, Request, Response } from 'express';
-import { handleGoogleLogin } from '../services/socialAuthService';
+import { handleSocialLogin, SupportedProvider } from '../services/socialAuthService';
 
 const router = Router();
 
 // ============================================================================
-// Social Auth (Google Start)
+// Unified Social Auth Endpoint
 // ============================================================================
 
-/**
- * Handle Google Sign-In with backend verification.
- * 
- * Ensures that if a user already exists with a password account, they can safely
- * link the Google provider without overwriting their password credential.
- */
-router.post('/google-start', async (req: Request, res: Response) => {
-  const { accessToken } = req.body;
+const SUPPORTED_PROVIDERS: SupportedProvider[] = ['google', 'facebook', 'microsoft'];
 
-  if (!accessToken) {
+/**
+ * Unified social login pre-flight check.
+ *
+ * Verifies OAuth access token and checks for account conflicts BEFORE
+ * the frontend signs into Firebase.
+ *
+ * Supported providers: google, facebook, microsoft
+ */
+router.post('/social-login-start', async (req: Request, res: Response) => {
+  const { provider, accessToken } = req.body;
+
+  // Validate required fields
+  if (!provider || !accessToken) {
     return res.status(400).json({
       success: false,
-      message: 'Missing required field: accessToken'
+      error: 'Missing required fields: provider and accessToken'
+    });
+  }
+
+  // Validate provider
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    return res.status(400).json({
+      success: false,
+      error: `Unsupported provider: ${provider}. Supported: ${SUPPORTED_PROVIDERS.join(', ')}`
     });
   }
 
   try {
-    const result = await handleGoogleLogin(accessToken);
+    const result = await handleSocialLogin(provider, accessToken);
     return res.json({ success: true, ...result });
   } catch (error: any) {
-    console.error('Error in google-start:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to process Google login'
-    });
-  }
-});
+    console.error(`[social-login-start] Error for ${provider}:`, error);
 
-/**
- * Get providers for an email (Secure Backend Check).
- * 
- * Bypasses client-side "Email Enumeration Protection" by running on the backend.
- * Only call this when you already have an email conflict.
- */
-router.post('/get-providers', async (req: Request, res: Response) => {
-  const { email } = req.body;
+    // Provide user-friendly error messages
+    let errorMessage = 'Failed to process social login';
 
-  if (!email) {
+    if (error.message?.includes('token verification failed')) {
+      errorMessage = `Invalid or expired ${provider} access token`;
+    } else if (error.message?.includes('No email')) {
+      errorMessage = `Could not retrieve email from ${provider} account. Please ensure email permission is granted.`;
+    }
+
     return res.status(400).json({
       success: false,
-      message: 'Missing required field: email'
-    });
-  }
-
-  try {
-    const { getProvidersByEmail } = await import('../services/socialAuthService');
-    const providers = await getProvidersByEmail(email);
-    return res.json({ success: true, providers });
-  } catch (error: any) {
-    console.error('Error in get-providers:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch providers'
+      error: errorMessage
     });
   }
 });

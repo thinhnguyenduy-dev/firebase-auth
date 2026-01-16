@@ -1,105 +1,97 @@
 import { auth } from '../config/firebase';
+import { verifyOAuthToken, SupportedProvider } from './oauthProviderService';
 
-interface SocialLoginResult {
+export interface SocialLoginResult {
   action: 'signin' | 'link';
   customToken?: string;
+  existingUid?: string;
   email?: string;
+  existingProviders?: string[];
   message?: string;
 }
 
+// Re-export for convenience
+export { SupportedProvider };
+
 /**
- * Handle Google Sign-In with conflict detection.
- * 
- * Prevents the "Overwrite" issue where signing in with Google automatically
- * wipes out the password credential for an existing email/password user.
- * 
- * Flow:
- * 1. Verify Google Access Token (call UserInfo).
- * 2. Check if user exists by email.
- * 3. IF user exists AND has 'password' provider:
- *    - Return { action: 'link', customToken }
- *    - Client triggers linkWithCredential()
- * 4. ELSE:
- *    - Return { action: 'signin' }
- *    - Client triggers signInWithCredential()
+ * Unified handler for social login with conflict detection.
+ *
+ * This function:
+ * 1. Verifies the OAuth access token with the respective provider
+ * 2. Extracts the email from the provider
+ * 3. Checks Firebase for existing users with that email
+ * 4. Determines if linking is required or if normal sign-in can proceed
+ *
+ * Special cases handled:
+ * - Gmail addresses with Google: If user has password, Google would normally overwrite it
+ * - Any email with existing different provider: Standard Firebase conflict scenario
  */
-export async function handleGoogleLogin(accessToken: string): Promise<SocialLoginResult> {
+export async function handleSocialLogin(
+  provider: SupportedProvider,
+  accessToken: string
+): Promise<SocialLoginResult> {
+  // 1. Verify token and get user info
+  const oauthUserInfo = await verifyOAuthToken(provider, accessToken);
+  const email = oauthUserInfo.email.toLowerCase();
+  const incomingProviderId = oauthUserInfo.providerId;
+
+  console.log(`[handleSocialLogin] Provider: ${provider}, Email: ${email}`);
+
+  // 2. Check if user exists in Firebase
+  let existingUser;
   try {
-    // 1. Verify the Google Access Token by fetching User Info
-    const userInfo = await fetchGoogleUserInfo(accessToken);
-    const email = userInfo.email;
-
-    if (!email) {
-      throw new Error('No email found in Google account.');
-    }
-
-    // 2. Check if user exists in Firebase
-    try {
-      const userRecord = await auth.getUserByEmail(email);
-      
-      // 3. Check for conflict (Existing Password User)
-      const hasPassword = userRecord.providerData.some(p => p.providerId === 'password');
-      const hasGoogle = userRecord.providerData.some(p => p.providerId === 'google.com');
-
-      if (hasPassword && !hasGoogle) {
-        // CASE: Account Linking Required
-        console.log(`[handleGoogleLogin] Conflict detected for ${email}. Returning custom token for linking.`);
-        
-        const customToken = await auth.createCustomToken(userRecord.uid);
-        
-        return {
-          action: 'link',
-          customToken,
-          email,
-          message: 'Account exists with password. Linking Google account...'
-        };
-      }
-      
-      // If already has google, or is social-only, or doesn't exist yet -> Standard Sign-In
-      return { action: 'signin' };
-
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found') {
-        // New user -> Standard Sign-In
-        return { action: 'signin' };
-      }
-      throw error;
-    }
-
-  } catch (error: any) {
-    console.error('Error in handleGoogleLogin:', error);
-    throw new Error('Failed to process Google login');
-  }
-}
-
-export async function getProvidersByEmail(email: string): Promise<string[]> {
-  try {
-    const user = await auth.getUserByEmail(email);
-    return user.providerData.map((p: any) => p.providerId);
+    existingUser = await auth.getUserByEmail(email);
   } catch (error: any) {
     if (error.code === 'auth/user-not-found') {
-      return [];
+      // No existing user - safe to proceed with normal sign-in
+      console.log(`[handleSocialLogin] No existing user for ${email} - proceeding with signin`);
+      return { action: 'signin', email };
     }
     throw error;
   }
-}
 
-// Helper to fetch Google User Info using Access Token
-async function fetchGoogleUserInfo(accessToken: string): Promise<{ email?: string, sub?: string }> {
-  try {
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
+  // 3. Analyze existing providers
+  const existingProviders = existingUser.providerData.map(p => p.providerId);
+  const hasPassword = existingProviders.includes('password');
+  const hasIncomingProvider = existingProviders.includes(incomingProviderId);
 
-    if (!response.ok) {
-      throw new Error(`Google UserInfo failed: ${response.statusText}`);
-    }
+  console.log(`[handleSocialLogin] Existing user ${existingUser.uid} has providers: ${existingProviders.join(', ')}`);
 
-    return await response.json();
-  } catch (error) {
-    console.error('Failed to fetch Google User Info:', error);
-    throw new Error('Invalid Google Access Token');
+  // 4. Determine action based on provider combinations
+
+  // Case A: User already has this provider - normal sign-in
+  if (hasIncomingProvider) {
+    console.log(`[handleSocialLogin] User already has ${incomingProviderId} - proceeding with signin`);
+    return { action: 'signin', email };
   }
+
+  // Case B: User has password provider - MUST link to preserve password
+  // This is the critical "Google overwrites password" prevention
+  if (hasPassword) {
+    console.log(`[handleSocialLogin] User has password provider - returning link action`);
+    const customToken = await auth.createCustomToken(existingUser.uid);
+    return {
+      action: 'link',
+      customToken,
+      existingUid: existingUser.uid,
+      email,
+      existingProviders,
+      message: `Account exists with email/password. Linking ${provider} account...`
+    };
+  }
+
+  // Case C: User has different social provider(s) but no password
+  // Firebase would normally throw account-exists-with-different-credential
+  // We proactively detect and handle this with linking
+  console.log(`[handleSocialLogin] User has different social providers - returning link action`);
+  const customToken = await auth.createCustomToken(existingUser.uid);
+  return {
+    action: 'link',
+    customToken,
+    existingUid: existingUser.uid,
+    email,
+    existingProviders,
+    message: `Account exists with ${existingProviders.join(', ')}. Linking ${provider} account...`
+  };
 }
+
