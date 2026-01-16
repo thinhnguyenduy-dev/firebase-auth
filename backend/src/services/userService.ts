@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, User } from '@prisma/client';
 import { auth } from '../config/firebase';
 
 const prisma = new PrismaClient();
@@ -7,6 +7,17 @@ export interface SyncUserData {
   uid: string;
   email?: string;
   name?: string;
+}
+
+export interface SyncUserResult {
+  user: User;
+  emailMissing?: false;
+}
+
+export interface SyncUserNoEmailResult {
+  message: string;
+  uid: string;
+  emailMissing: true;
 }
 
 /**
@@ -39,13 +50,15 @@ export async function getEmailFromFirebase(uid: string, email?: string): Promise
 /**
  * Sync user to database, handling account merges
  */
-export async function syncUserToDatabase(data: SyncUserData) {
+export async function syncUserToDatabase(
+  data: SyncUserData
+): Promise<SyncUserResult | SyncUserNoEmailResult> {
   const { uid, name } = data;
   
   const userEmail = await getEmailFromFirebase(uid, data.email);
 
   if (!userEmail) {
-    return { message: 'User synced without email', uid };
+    return { message: 'User synced without email', uid, emailMissing: true };
   }
 
   // Check if user with this email exists but with different UID (account merge scenario)
@@ -56,16 +69,18 @@ export async function syncUserToDatabase(data: SyncUserData) {
   if (existingByEmail && existingByEmail.firebaseUid !== uid) {
     // Email exists with different UID - update the UID (account was merged)
     console.log(`[userService] Updating firebaseUid for email ${userEmail}: ${existingByEmail.firebaseUid} -> ${uid}`);
-    return prisma.user.update({
+    const user = await prisma.user.update({
       where: { email: userEmail },
       data: { firebaseUid: uid, name },
     });
+    return { user };
   }
 
   // Normal upsert by firebaseUid
-  return prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { firebaseUid: uid },
     update: { email: userEmail, name },
     create: { firebaseUid: uid, email: userEmail, name },
   });
+  return { user };
 }

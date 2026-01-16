@@ -8,6 +8,19 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export type SupportedProvider = 'google' | 'facebook' | 'microsoft';
 
+export interface AuthResponse {
+  success: boolean;
+  user?: {
+    id?: string;
+    email?: string;
+    name?: string;
+    firebaseUid: string;
+    providers?: string[];
+    isNew?: boolean;
+  };
+  error?: string;
+}
+
 export interface SocialLoginResponse {
   success: boolean;
   action: 'signin' | 'link';
@@ -20,25 +33,76 @@ export interface SocialLoginResponse {
 }
 
 // ============================================================================
-// Unified Social Auth
+// Helper
+// ============================================================================
+
+async function authRequest(
+  endpoint: string,
+  user: User,
+  body?: Record<string, any>
+): Promise<AuthResponse> {
+  const token = await user.getIdToken();
+
+  try {
+    const res = await fetch(`${API_URL}/api/auth/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body || {}),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return { success: false, error: data.error || `Failed to ${endpoint}` };
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error(`[api] ${endpoint} error:`, error);
+    return { success: false, error: error.message || 'Network error' };
+  }
+}
+
+// ============================================================================
+// Auth Endpoints
 // ============================================================================
 
 /**
- * Unified social login pre-flight check.
- *
- * Sends OAuth access token to backend for verification and conflict detection
- * BEFORE signing into Firebase.
- *
- * Usage:
- * 1. Get access token from provider popup
- * 2. Call this function
- * 3. If action === 'link': Sign in with customToken, then linkWithCredential
- * 4. If action === 'signin': Sign in normally with credential
+ * Login - verify token and sync user to database
  */
-export const socialLoginStart = async (
+export async function login(user: User, name?: string): Promise<AuthResponse> {
+  return authRequest('login', user, { name: name || user.displayName || user.email?.split('@')[0] });
+}
+
+/**
+ * Register - verify token and create user in database
+ */
+export async function register(user: User, name?: string): Promise<AuthResponse> {
+  return authRequest('register', user, { name: name || user.displayName || user.email?.split('@')[0] });
+}
+
+/**
+ * @deprecated Use login() or register() instead
+ * Kept for backward compatibility during migration
+ */
+export async function syncUser(user: User): Promise<AuthResponse> {
+  return login(user);
+}
+
+// ============================================================================
+// Social Auth
+// ============================================================================
+
+/**
+ * Social login pre-flight check - verifies token and checks for conflicts
+ */
+export async function socialLoginStart(
   provider: SupportedProvider,
   accessToken: string
-): Promise<SocialLoginResponse> => {
+): Promise<SocialLoginResponse> {
   try {
     const res = await fetch(`${API_URL}/api/auth/social-login-start`, {
       method: 'POST',
@@ -64,33 +128,4 @@ export const socialLoginStart = async (
       error: error.message || 'Network error'
     };
   }
-};
-
-// ============================================================================
-// User Sync
-// ============================================================================
-
-export const syncUser = async (user: User) => {
-  const token = await user.getIdToken();
-
-  try {
-    const res = await fetch(`${API_URL}/api/users/sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        name: user.displayName || user.email?.split('@')[0],
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error('Failed to sync user');
-    }
-
-    return await res.json();
-  } catch (error) {
-    console.error('Error syncing user:', error);
-  }
-};
+}
