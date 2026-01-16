@@ -5,10 +5,7 @@ import { createUserWithEmailAndPassword, signInWithCustomToken } from 'firebase/
 import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { checkAccountLink, register } from '@/lib/api';
-import { useSocialAuth } from '@/hooks/useSocialAuth';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
-import AddPasswordModal from '@/components/AddPasswordModal';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -29,46 +26,6 @@ export default function RegisterPage() {
     e.preventDefault();
     setRegisterError('');
     setRegisterLoading(true);
-    
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      let user = result.user;
-      
-      setStatusMessage('Setting up your account...');
-      const linkResult = await checkAccountLink(user.uid);
-      console.log('Link check result:', linkResult);
-
-      if (linkResult.needsVerification) {
-        console.log('Social account exists - verification required');
-        setStatusMessage('');
-        await auth.signOut();
-        setModalEmail(linkResult.email || email);
-        setShowAddPasswordModal(true);
-        setRegisterError(`This email is already registered with ${linkResult.providers?.join(', ')}. Please verify your email to add a password.`);
-        return;
-      }
-
-      if (linkResult.linked && linkResult.customToken) {
-        console.log('Accounts linked!');
-        setStatusMessage('Account linked successfully!');
-        await signInWithCustomToken(auth, linkResult.customToken);
-        user = auth.currentUser!;
-      }
-
-      await register(user);
-      router.push('/dashboard');
-    } catch (err: any) {
-      if (err.code === 'auth/email-already-in-use') {
-        setModalEmail(email);
-        setShowAddPasswordModal(true);
-        setRegisterError('');
-      } else {
-        setRegisterError(err.message);
-      }
-    } finally {
-      setRegisterLoading(false);
-      setStatusMessage('');
-    }
   };
 
   return (
@@ -160,14 +117,6 @@ export default function RegisterPage() {
 
         <p className="text-center text-white/30 text-sm mt-8">Firebase Authentication Demo</p>
       </div>
-
-      {showAddPasswordModal && (
-        <AddPasswordModal
-          email={modalEmail}
-          onClose={() => setShowAddPasswordModal(false)}
-          initialPassword={password}
-        />
-      )}
     </div>
   );
 }
