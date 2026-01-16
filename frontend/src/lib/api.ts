@@ -3,92 +3,106 @@ import { User } from 'firebase/auth';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // ============================================================================
-// Account Merge API
+// Account Link API
 // ============================================================================
 
-export interface CheckMergeResponse {
+export interface CheckLinkResponse {
   success: boolean;
-  merged: boolean;
+  linked: boolean;
   customToken?: string;
   message: string;
-  // For password→social case: requires email verification first
   needsVerification?: boolean;
   providers?: string[];
   email?: string;
 }
 
 /**
- * Check and merge duplicate accounts.
- * Called after signInWithPopup or createUserWithEmailAndPassword.
- * Handles all merge scenarios:
- * - Social → Password: Merge social into password account
- * - Password → Social: Merge social into password account  
- * - Social → Social: Merge newer into older account
+ * Check and link duplicate accounts.
  */
-export const checkMerge = async (
-  currentUserUid: string
-): Promise<CheckMergeResponse> => {
-  const res = await fetch(`${API_URL}/api/auth/check-merge`, {
+export async function checkAccountLink(currentUserUid: string): Promise<CheckLinkResponse> {
+  const res = await fetch(`${API_URL}/api/auth/check-link`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ currentUserUid }),
   });
   return res.json();
-};
+}
+
+// ============================================================================
+// Login / Register API
+// ============================================================================
+
+export interface AuthResponse {
+  success: boolean;
+  user?: {
+    id: string;
+    email: string;
+    firebaseUid: string;
+    name?: string;
+  };
+  message?: string;
+}
+
+/**
+ * Login - sync user to database after Firebase auth
+ */
+export async function login(user: User): Promise<AuthResponse> {
+  const token = await user.getIdToken();
+  const res = await fetch(`${API_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: user.displayName || user.email?.split('@')[0],
+    }),
+  });
+  return res.json();
+}
+
+/**
+ * Register - create user in database after Firebase auth
+ */
+export async function register(user: User): Promise<AuthResponse> {
+  const token = await user.getIdToken();
+  const res = await fetch(`${API_URL}/api/auth/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: user.displayName || user.email?.split('@')[0],
+    }),
+  });
+  return res.json();
+}
 
 // ============================================================================
 // Add Password to Social Account
 // ============================================================================
 
-export const sendVerificationCode = async (
+export async function sendVerificationCode(
   email: string
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/api/auth/send-verification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
   });
   return res.json();
-};
+}
 
-export const addPasswordToAccount = async (
+export async function addPasswordToAccount(
   email: string,
   code: string,
   password: string
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/api/auth/add-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, code, password }),
   });
   return res.json();
-};
-
-// ============================================================================
-// User Sync
-// ============================================================================
-
-export const syncUser = async (user: User) => {
-  const token = await user.getIdToken();
-  
-  try {
-    const res = await fetch(`${API_URL}/api/users/sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        name: user.displayName || user.email?.split('@')[0],
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error('Failed to sync user');
-    }
-    
-    return await res.json();
-  } catch (error) {
-    console.error('Error syncing user:', error);
-  }
-};
+}

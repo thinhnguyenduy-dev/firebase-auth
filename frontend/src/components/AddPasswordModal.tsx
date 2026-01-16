@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { sendVerificationCode, addPasswordToAccount, syncUser } from '@/lib/api';
+import { sendVerificationCode, addPasswordToAccount, login } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
 interface AddPasswordModalProps {
@@ -62,7 +62,7 @@ export default function AddPasswordModal({ email, onClose, initialPassword = '' 
       if (result.success) {
         // Sign in with the new password
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        await syncUser(userCredential.user);
+        await login(userCredential.user);
         router.push('/dashboard');
       } else {
         setError(result.message);
