@@ -1,7 +1,7 @@
 import { auth } from '../config/firebase';
 import { verifyOAuthToken, SupportedProvider } from './oauthProviderService';
 
-export interface SocialLoginResult {
+export interface SocialAuthCheckResult {
   action: 'signin' | 'link';
   customToken?: string;
   existingUid?: string;
@@ -14,7 +14,7 @@ export interface SocialLoginResult {
 export { SupportedProvider };
 
 /**
- * Unified handler for social login with conflict detection.
+ * Check for social auth conflicts before Firebase sign-in.
  *
  * This function:
  * 1. Verifies the OAuth access token with the respective provider
@@ -22,20 +22,20 @@ export { SupportedProvider };
  * 3. Checks Firebase for existing users with that email
  * 4. Determines if linking is required or if normal sign-in can proceed
  *
- * Special cases handled:
- * - Gmail addresses with Google: If user has password, Google would normally overwrite it
- * - Any email with existing different provider: Standard Firebase conflict scenario
+ * Returns:
+ * - action: 'signin' if safe to sign in normally
+ * - action: 'link' with customToken if account linking is required
  */
-export async function handleSocialLogin(
+export async function checkSocialAuthConflict(
   provider: SupportedProvider,
   accessToken: string
-): Promise<SocialLoginResult> {
+): Promise<SocialAuthCheckResult> {
   // 1. Verify token and get user info
   const oauthUserInfo = await verifyOAuthToken(provider, accessToken);
   const email = oauthUserInfo.email.toLowerCase();
   const incomingProviderId = oauthUserInfo.providerId;
 
-  console.log(`[handleSocialLogin] Provider: ${provider}, Email: ${email}`);
+  console.log(`[checkSocialAuthConflict] Provider: ${provider}, Email: ${email}`);
 
   // 2. Check if user exists in Firebase
   let existingUser;
@@ -44,7 +44,7 @@ export async function handleSocialLogin(
   } catch (error: any) {
     if (error.code === 'auth/user-not-found') {
       // No existing user - safe to proceed with normal sign-in
-      console.log(`[handleSocialLogin] No existing user for ${email} - proceeding with signin`);
+      console.log(`[checkSocialAuthConflict] No existing user for ${email} - proceeding with signin`);
       return { action: 'signin', email };
     }
     throw error;
@@ -55,20 +55,20 @@ export async function handleSocialLogin(
   const hasPassword = existingProviders.includes('password');
   const hasIncomingProvider = existingProviders.includes(incomingProviderId);
 
-  console.log(`[handleSocialLogin] Existing user ${existingUser.uid} has providers: ${existingProviders.join(', ')}`);
+  console.log(`[checkSocialAuthConflict] Existing user ${existingUser.uid} has providers: ${existingProviders.join(', ')}`);
 
   // 4. Determine action based on provider combinations
 
   // Case A: User already has this provider - normal sign-in
   if (hasIncomingProvider) {
-    console.log(`[handleSocialLogin] User already has ${incomingProviderId} - proceeding with signin`);
+    console.log(`[checkSocialAuthConflict] User already has ${incomingProviderId} - proceeding with signin`);
     return { action: 'signin', email };
   }
 
   // Case B: User has password provider - MUST link to preserve password
   // This is the critical "Google overwrites password" prevention
   if (hasPassword) {
-    console.log(`[handleSocialLogin] User has password provider - returning link action`);
+    console.log(`[checkSocialAuthConflict] User has password provider - returning link action`);
     const customToken = await auth.createCustomToken(existingUser.uid);
     return {
       action: 'link',
@@ -83,7 +83,7 @@ export async function handleSocialLogin(
   // Case C: User has different social provider(s) but no password
   // Firebase would normally throw account-exists-with-different-credential
   // We proactively detect and handle this with linking
-  console.log(`[handleSocialLogin] User has different social providers - returning link action`);
+  console.log(`[checkSocialAuthConflict] User has different social providers - returning link action`);
   const customToken = await auth.createCustomToken(existingUser.uid);
   return {
     action: 'link',

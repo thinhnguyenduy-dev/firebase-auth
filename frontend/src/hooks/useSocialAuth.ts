@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
@@ -38,21 +38,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
     setStatusMessage('');
   }, []);
 
-  const initGoogleClient = useCallback(() => {
-    if (window.google) {
-      tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
-        scope: 'email profile openid',
-        callback: async (tokenResponse: any) => {
-          if (tokenResponse.access_token) {
-            await handleGoogleAuth(tokenResponse.access_token);
-          }
-        },
-      });
-    }
-  }, []);
-
-  const handleGoogleAuth = async (accessToken: string) => {
+  const handleGoogleAuth = useCallback(async (accessToken: string) => {
     try {
       const result = await handleGoogleAuthWithToken(accessToken, setStatusMessage);
       if (!result.success) {
@@ -67,7 +53,28 @@ export function useSocialAuth(): UseSocialAuthReturn {
       setLoading(false);
       setStatusMessage('');
     }
-  };
+  }, [router]);
+
+  const initGoogleClient = useCallback(() => {
+    if (window.google && !tokenClient.current) {
+      tokenClient.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        scope: 'email profile openid',
+        callback: async (tokenResponse: any) => {
+          if (tokenResponse.access_token) {
+            await handleGoogleAuth(tokenResponse.access_token);
+          }
+        },
+      });
+    }
+  }, [handleGoogleAuth]);
+
+  // Initialize Google client on mount if script is already loaded
+  useEffect(() => {
+    if (window.google) {
+      initGoogleClient();
+    }
+  }, [initGoogleClient]);
 
   const handleSocialLogin = useCallback(async (providerName: SocialProvider) => {
     clearMessages();

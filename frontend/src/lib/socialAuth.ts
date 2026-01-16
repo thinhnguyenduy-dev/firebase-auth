@@ -17,7 +17,7 @@ import {
   User
 } from 'firebase/auth';
 import { auth, googleProvider, facebookProvider, microsoftProvider } from './firebase';
-import { socialLoginStart, syncUser, SupportedProvider } from './api';
+import { socialAuthPreflight, syncUser, SupportedProvider } from './api';
 
 export interface SocialAuthResult {
   success: boolean;
@@ -31,6 +31,7 @@ interface OAuthTokens {
   idToken?: string;
   credential: AuthCredential;
   fromError?: boolean;
+  user?: User;  // User from popup if already signed in successfully
 }
 
 /**
@@ -51,6 +52,7 @@ function getAuthProvider(provider: SupportedProvider) {
 
 /**
  * Execute OAuth popup and extract access token AND credential.
+ * Returns user if popup succeeds (provider already linked).
  */
 export async function getOAuthAccessToken(
   provider: SupportedProvider
@@ -77,7 +79,8 @@ export async function getOAuthAccessToken(
       accessToken: credential.accessToken || '',
       idToken: credential.idToken,
       credential: credential,
-      fromError: false
+      fromError: false,
+      user: result.user  // Return the already-signed-in user
     };
   } catch (error: any) {
     if (error.code === 'auth/popup-closed-by-user') {
@@ -186,7 +189,7 @@ export async function handleGoogleAuthWithToken(
 ): Promise<SocialAuthResult> {
   try {
     onStatusUpdate?.('Verifying account...');
-    const backendResult = await socialLoginStart('google', accessToken);
+    const backendResult = await socialAuthPreflight('google', accessToken);
 
     if (!backendResult.success) {
       return { success: false, error: backendResult.error || 'Backend verification failed' };
@@ -218,7 +221,7 @@ export async function handleUnifiedSocialAuth(
 ): Promise<SocialAuthResult> {
   try {
     onStatusUpdate?.('Verifying account...');
-    const backendResult = await socialLoginStart(provider, accessToken);
+    const backendResult = await socialAuthPreflight(provider, accessToken);
 
     if (!backendResult.success) {
       return { success: false, error: backendResult.error || 'Backend verification failed' };
@@ -239,6 +242,10 @@ export async function handleUnifiedSocialAuth(
 
 /**
  * Complete social auth flow for Facebook/Microsoft.
+ * 
+ * Optimized flow:
+ * - If popup succeeds (user already has provider linked), just sync and return
+ * - If popup fails with conflict, sign out and call backend for linking
  */
 export async function completeSocialAuthFlow(
   provider: 'facebook' | 'microsoft',
@@ -253,6 +260,16 @@ export async function completeSocialAuthFlow(
       return { success: false, error: 'Sign-in was cancelled' };
     }
 
+    // If popup succeeded without error, user is already signed in
+    // Just sync and return - no need for backend verification
+    if (!tokens.fromError && tokens.user) {
+      onStatusUpdate?.('Completing sign-in...');
+      await syncUser(tokens.user);
+      return { success: true, user: tokens.user, linked: false };
+    }
+
+    // If popup failed with conflict error, we need backend orchestration
+    // Sign out first (user wasn't signed in due to error)
     if (!tokens.fromError) {
       await auth.signOut();
     }
@@ -273,3 +290,4 @@ export async function completeSocialAuthFlow(
     return { success: false, error: error.message || 'Failed to sign in' };
   }
 }
+

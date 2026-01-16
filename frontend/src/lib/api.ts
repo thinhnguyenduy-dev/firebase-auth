@@ -21,7 +21,7 @@ export interface AuthResponse {
   error?: string;
 }
 
-export interface SocialLoginResponse {
+export interface SocialAuthPreflightResponse {
   success: boolean;
   action: 'signin' | 'link';
   customToken?: string;
@@ -97,14 +97,14 @@ export async function syncUser(user: User): Promise<AuthResponse> {
 // ============================================================================
 
 /**
- * Social login pre-flight check - verifies token and checks for conflicts
+ * Social auth preflight check - verifies token and checks for conflicts
  */
-export async function socialLoginStart(
+export async function socialAuthPreflight(
   provider: SupportedProvider,
   accessToken: string
-): Promise<SocialLoginResponse> {
+): Promise<SocialAuthPreflightResponse> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/social-login-start`, {
+    const res = await fetch(`${API_URL}/api/auth/social/preflight`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, accessToken }),

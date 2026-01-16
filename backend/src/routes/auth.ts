@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { verifyToken } from '../middleware/auth';
-import { login, register, socialLoginStart } from '../controllers/authController';
+import { login, register, socialAuthPreflight } from '../controllers/authController';
 
 const router = Router();
 
@@ -21,9 +21,9 @@ router.post('/login', verifyToken, login);
 router.post('/register', verifyToken, register);
 
 /**
- * POST /api/auth/social-login-start
- * Pre-flight check for social login - verifies token and checks for conflicts
+ * POST /api/auth/social/preflight
+ * Pre-authentication check - verifies OAuth token and checks for account conflicts
  */
-router.post('/social-login-start', socialLoginStart);
+router.post('/social/preflight', socialAuthPreflight);
 
 export default router;

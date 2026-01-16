@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { syncUserToDatabase } from '../services/userService';
 import { auth } from '../config/firebase';
-import { handleSocialLogin, SupportedProvider } from '../services/socialAuthService';
+import { checkSocialAuthConflict, SupportedProvider } from '../services/socialAuthService';
 import { Request } from 'express';
 
 const SUPPORTED_PROVIDERS: SupportedProvider[] = ['google', 'facebook', 'microsoft'];
@@ -89,10 +89,11 @@ export async function register(req: AuthRequest, res: Response) {
 }
 
 /**
- * POST /api/auth/social-login-start
- * Pre-flight check for social login - verifies token and checks for conflicts
+ * POST /api/auth/social/preflight
+ * Pre-authentication check for social providers.
+ * Verifies OAuth token and checks if account linking is required.
  */
-export async function socialLoginStart(req: Request, res: Response) {
+export async function socialAuthPreflight(req: Request, res: Response) {
   const { provider, accessToken } = req.body;
 
   // Validate required fields
@@ -112,10 +113,10 @@ export async function socialLoginStart(req: Request, res: Response) {
   }
 
   try {
-    const result = await handleSocialLogin(provider, accessToken);
+    const result = await checkSocialAuthConflict(provider, accessToken);
     return res.json({ success: true, ...result });
   } catch (error: any) {
-    console.error(`[authController] social-login-start error for ${provider}:`, error);
+    console.error(`[authController] socialAuthPreflight error for ${provider}:`, error);
 
     let errorMessage = 'Failed to process social login';
 

@@ -183,7 +183,7 @@ This application implements a **proactive backend-orchestrated approach** that:
    │              │ ◄───────────────────────────────-│                  │
    │              │ Access token + credential        │                  │
    │              │                │                 │                  │
-   │              │ POST /auth/social/start          │                  │
+   │              │ POST /api/auth/social/preflight   │                  │
    │              │ {provider, accessToken}          │                  │
    │              │───────────────►│                 │                  │
    │              │                │                 │                  │
@@ -235,7 +235,7 @@ This application implements a **proactive backend-orchestrated approach** that:
    │              │ Provider linked│                 │                  │
    │              │                │                 │                  │
    ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │ POST /auth/sync│                 │                  │
+   │              │ POST /api/auth/login             │                  │
    │              │───────────────►│                 │                  │
    │              │ ◄──────────────│                 │                  │
    │              │                │                 │                  │
@@ -253,10 +253,10 @@ This application implements a **proactive backend-orchestrated approach** that:
 The core logic resides in [socialAuthService.ts](file:///projects/learning/firebase-auth/backend/src/services/socialAuthService.ts):
 
 ```typescript
-export async function handleSocialLogin(
+export async function checkSocialAuthConflict(
   provider: SupportedProvider,
   accessToken: string
-): Promise<SocialLoginResult> {
+): Promise<SocialAuthCheckResult> {
   // 1. Verify token and get user info from provider
   const oauthUserInfo = await verifyOAuthToken(provider, accessToken);
   const email = oauthUserInfo.email.toLowerCase();
@@ -286,7 +286,8 @@ export async function handleUnifiedSocialAuth(
   accessToken: string,
   credential: AuthCredential
 ): Promise<SocialAuthResult> {
-  const backendResult = await socialLoginStart(provider, accessToken);
+  // Call preflight check endpoint
+  const backendResult = await socialAuthPreflight(provider, accessToken);
 
   if (backendResult.action === 'link') {
     // Sign in as existing user with custom token
