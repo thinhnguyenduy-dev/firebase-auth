@@ -1,5 +1,5 @@
 {
-  "name": "@firebase-auth-demo/client",
+  "name": "@firebase-auth-demo/frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

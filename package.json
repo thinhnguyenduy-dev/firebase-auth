@@ -7,12 +7,12 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently \"pnpm --filter @firebase-auth-demo/client dev\" \"pnpm --filter @firebase-auth-demo/server dev\"",
-    "dev:frontend": "pnpm --filter @firebase-auth-demo/client dev",
-    "dev:backend": "pnpm --filter @firebase-auth-demo/server dev",
+    "dev": "concurrently \"pnpm --filter @firebase-auth-demo/frontend dev\" \"pnpm --filter @firebase-auth-demo/backend dev\"",
+    "dev:frontend": "pnpm --filter @firebase-auth-demo/frontend dev",
+    "dev:backend": "pnpm --filter @firebase-auth-demo/backend dev",
     "build": "pnpm -r build",
-    "build:frontend": "pnpm --filter @firebase-auth-demo/client build",
-    "build:backend": "pnpm --filter @firebase-auth-demo/server build",
+    "build:frontend": "pnpm --filter @firebase-auth-demo/frontend build",
+    "build:backend": "pnpm --filter @firebase-auth-demo/backend build",
     "test": "pnpm -r test"
   },
   "devDependencies": {

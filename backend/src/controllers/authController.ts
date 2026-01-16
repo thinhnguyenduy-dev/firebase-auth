@@ -1,30 +1,29 @@
 import { Request, Response } from 'express';
 import { auth } from '../config/firebase';
-import { PrismaClient } from '@prisma/client';
 import { checkAndLinkAccounts } from '../services/accountLinkService';
 import { generateCode, storeCode, verifyCode } from '../services/verificationStore';
 import { sendVerificationCode } from '../services/emailService';
-import { findUserByEmail, getEmailFromUser } from '../services/userSearchService';
+import { findUserByEmail } from '../services/userSearchService';
+import { syncUserToDatabase } from '../services/userService';
+import { AppError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { CheckLinkRequest, SendVerificationRequest, AddPasswordRequest } from '../schemas/authSchemas'; // Types from schemas if exported, otherwise maintain interfaces or use z.infer
+// Note: We need to export types from schemas or redefine them. 
+// For now, I will trust the Zod middleware to validate body, so I can cast body.
 
-const prisma = new PrismaClient();
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface CheckLinkRequest {
-  currentUserUid: string;
+// Redefining types based on what was there, but strictly typed now
+interface CheckLinkBody {
+    currentUserUid: string;
 }
 
-interface SendVerificationRequest {
-  email: string;
+interface SendVerificationBody {
+    email: string;
 }
 
-interface AddPasswordRequest {
-  email: string;
-  code: string;
-  password: string;
+interface AddPasswordBody {
+    email: string;
+    code: string;
+    password: string;
 }
 
 // ============================================================================
@@ -33,35 +32,12 @@ interface AddPasswordRequest {
 
 /**
  * Check and link duplicate accounts.
- * Called after signInWithPopup when using "Create multiple accounts" Firebase setting.
- * 
- * Handles all link scenarios:
- * - Social → Password: Link social into password account
- * - Password → Social: Link social into password account  
- * - Social → Social: Link newer into older account
  */
 export async function checkLink(req: Request, res: Response) {
-  const { currentUserUid } = req.body as CheckLinkRequest;
+  const { currentUserUid } = req.body as CheckLinkBody;
 
-  if (!currentUserUid) {
-    return res.status(400).json({
-      success: false,
-      linked: false,
-      message: 'Missing required field: currentUserUid'
-    });
-  }
-
-  try {
-    const result = await checkAndLinkAccounts(currentUserUid);
-    return res.json(result);
-  } catch (error: any) {
-    console.error('Error in check-link:', error);
-    return res.status(500).json({
-      success: false,
-      linked: false,
-      message: 'Failed to check/link accounts'
-    });
-  }
+  const result = await checkAndLinkAccounts(currentUserUid);
+  return res.json(result);
 }
 
 // ============================================================================
@@ -72,152 +48,62 @@ export async function checkLink(req: Request, res: Response) {
  * Send verification code for adding password to existing OAuth account
  */
 export async function sendVerification(req: Request, res: Response) {
-  const { email } = req.body as SendVerificationRequest;
+  const { email } = req.body as SendVerificationBody;
 
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
+  const existingUser = await findUserByEmail(email);
+
+  if (!existingUser) {
+    throw new AppError('No account found with this email', 404);
   }
 
-  try {
-    const existingUser = await findUserByEmail(email);
-
-    if (!existingUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email'
-      });
-    }
-
-    const hasPassword = existingUser.providerData.some(p => p.providerId === 'password');
-    if (hasPassword) {
-      return res.status(409).json({
-        success: false,
-        message: 'Account already has a password. Please use login instead.'
-      });
-    }
-
-    const code = generateCode();
-    storeCode(email, code);
-    await sendVerificationCode(email, code);
-
-    return res.json({
-      success: true,
-      message: 'Verification code sent'
-    });
-  } catch (error: any) {
-    console.error('Error sending verification:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to send verification code'
-    });
+  const hasPassword = existingUser.providerData.some(p => p.providerId === 'password');
+  if (hasPassword) {
+    throw new AppError('Account already has a password. Please use login instead.', 409);
   }
+
+  const code = generateCode();
+  storeCode(email, code);
+  await sendVerificationCode(email, code);
+
+  return res.json({
+    success: true,
+    message: 'Verification code sent'
+  });
 }
 
 /**
  * Add password to existing OAuth account after verification
  */
 export async function addPassword(req: Request, res: Response) {
-  const { email, code, password } = req.body as AddPasswordRequest;
+  const { email, code, password } = req.body as AddPasswordBody;
 
-  if (!email || !code || !password) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email, code, and password are required'
-    });
+  const isValid = verifyCode(email, code);
+  if (!isValid) {
+    throw new AppError('Invalid or expired verification code', 401);
   }
 
-  if (password.length < 6) {
-    return res.status(400).json({
-      success: false,
-      message: 'Password must be at least 6 characters'
-    });
+  const existingUser = await findUserByEmail(email);
+
+  if (!existingUser) {
+    throw new AppError('No account found with this email', 404);
   }
 
-  try {
-    const isValid = verifyCode(email, code);
-    if (!isValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired verification code'
-      });
-    }
+  // With "Create multiple accounts" setting, social account may have email only in providerData
+  // We need to set email at account level for signInWithEmailAndPassword to work
+  await auth.updateUser(existingUser.uid, {
+    email: email,  // Set email at account level (required for email/password login)
+    password: password
+  });
 
-    const existingUser = await findUserByEmail(email);
-
-    if (!existingUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'No account found with this email'
-      });
-    }
-
-    // With "Create multiple accounts" setting, social account may have email only in providerData
-    // We need to set email at account level for signInWithEmailAndPassword to work
-    await auth.updateUser(existingUser.uid, {
-      email: email,  // Set email at account level (required for email/password login)
-      password: password
-    });
-
-    return res.json({
-      success: true,
-      message: 'Password added successfully'
-    });
-  } catch (error: any) {
-    console.error('Error adding password:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to add password'
-    });
-  }
+  return res.json({
+    success: true,
+    message: 'Password added successfully'
+  });
 }
 
 // ============================================================================
 // Login / Register Controller
 // ============================================================================
-
-/**
- * Helper function to sync user data to database
- */
-async function syncUserToDatabase(uid: string, email: string | undefined, name?: string) {
-  // Email might be missing for social logins with "Create multiple accounts" setting
-  let userEmail = email;
-  if (!userEmail) {
-    try {
-      const firebaseUser = await auth.getUser(uid);
-      userEmail = getEmailFromUser(firebaseUser);
-    } catch (e) {
-      console.error('Could not get user email from Firebase:', e);
-    }
-  }
-
-  if (!userEmail) {
-    return { message: 'User synced without email', uid };
-  }
-
-  // Check if user with this email exists but with different UID (account was linked)
-  const existingByEmail = await prisma.user.findUnique({
-    where: { email: userEmail },
-  });
-
-  if (existingByEmail && existingByEmail.firebaseUid !== uid) {
-    // Email exists with different UID - update the UID (account was linked)
-    console.log(`Updating firebaseUid for email ${userEmail}: ${existingByEmail.firebaseUid} -> ${uid}`);
-    return await prisma.user.update({
-      where: { email: userEmail },
-      data: { firebaseUid: uid, name },
-    });
-  }
-
-  // Normal upsert by firebaseUid
-  return await prisma.user.upsert({
-    where: { firebaseUid: uid },
-    update: { email: userEmail, name },
-    create: { firebaseUid: uid, email: userEmail, name },
-  });
-}
 
 /**
  * Login endpoint - verify token and sync user to database
@@ -226,13 +112,8 @@ export async function login(req: AuthRequest, res: Response) {
   const { uid, email } = req.user!;
   const { name } = req.body;
 
-  try {
-    const user = await syncUserToDatabase(uid, email, name);
-    return res.json({ success: true, user });
-  } catch (error) {
-    console.error('Error in login:', error);
-    return res.status(500).json({ success: false, message: 'Login failed' });
-  }
+  const user = await syncUserToDatabase(uid, email, name);
+  return res.json({ success: true, user });
 }
 
 /**
@@ -242,12 +123,8 @@ export async function register(req: AuthRequest, res: Response) {
   const { uid, email } = req.user!;
   const { name } = req.body;
 
-  try {
-    const user = await syncUserToDatabase(uid, email, name);
-    return res.json({ success: true, user });
-  } catch (error) {
-    console.error('Error in register:', error);
-    return res.status(500).json({ success: false, message: 'Registration failed' });
-  }
+  const user = await syncUserToDatabase(uid, email, name);
+  return res.json({ success: true, user });
 }
+
 
