@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useSocialAuth } from '@/hooks/useSocialAuth';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
+import LinkAccountModal from '@/components/LinkAccountModal';
 import { login } from '@/lib/api';
 
 export default function HomePage() {
@@ -17,7 +18,14 @@ export default function HomePage() {
   const [loginLoading, setLoginLoading] = useState(false);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { handleSocialLogin, loading: socialLoading, statusMessage, error: socialError } = useSocialAuth();
+  const { 
+    handleSocialLogin, 
+    loading: socialLoading, 
+    statusMessage, 
+    error: socialError,
+    linkAccountData,
+    closeLinkModal
+  } = useSocialAuth();
 
   const isLoading = loginLoading || socialLoading;
   const error = loginError || socialError;
@@ -142,6 +150,16 @@ export default function HomePage() {
 
         <p className="text-center text-white/30 text-sm mt-8">Firebase Authentication Demo</p>
       </div>
+      
+      {linkAccountData && (
+        <LinkAccountModal
+          isOpen={!!linkAccountData}
+          onClose={closeLinkModal}
+          existingEmail={linkAccountData.email}
+          providers={linkAccountData.providers}
+          onLink={(provider) => handleSocialLogin(provider, 'Provider')}
+        />
+      )}
     </div>
   );
 }

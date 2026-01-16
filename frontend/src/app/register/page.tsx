@@ -6,6 +6,8 @@ import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
+import { useSocialAuth } from '@/hooks/useSocialAuth';
+import LinkAccountModal from '@/components/LinkAccountModal';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -16,7 +18,15 @@ export default function RegisterPage() {
   const [showAddPasswordModal, setShowAddPasswordModal] = useState(false);
   const [modalEmail, setModalEmail] = useState('');
   const router = useRouter();
-  const { handleSocialLogin, loading: socialLoading, statusMessage: socialStatus, error: socialError } = useSocialAuth();
+  const { 
+    handleSocialLogin, 
+    checkExistingAccount,
+    loading: socialLoading, 
+    statusMessage: socialStatus, 
+    error: socialError,
+    linkAccountData,
+    closeLinkModal
+  } = useSocialAuth();
 
   const isLoading = registerLoading || socialLoading;
   const error = registerError || socialError;
@@ -26,6 +36,25 @@ export default function RegisterPage() {
     e.preventDefault();
     setRegisterError('');
     setRegisterLoading(true);
+
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+       // Sync handled by AuthContext or separate call if needed, but here we just redirect
+       // or let the auth state change handle it. 
+       // Note: The original code didn't have the full body content, assuming it was truncated or simple.
+       // We should ensure we handle success.
+       router.push('/dashboard');
+    } catch (err: any) {
+      console.error("Register error:", err);
+      if (err.code === 'auth/email-already-in-use') {
+        setRegisterError('Email already in use. Checking existing accounts...');
+        await checkExistingAccount(email, password);
+      } else {
+        setRegisterError(err.message || 'Failed to register.');
+      }
+    } finally {
+      setRegisterLoading(false);
+    }
   };
 
   return (
@@ -117,6 +146,16 @@ export default function RegisterPage() {
 
         <p className="text-center text-white/30 text-sm mt-8">Firebase Authentication Demo</p>
       </div>
+
+      {linkAccountData && (
+        <LinkAccountModal
+          isOpen={!!linkAccountData}
+          onClose={closeLinkModal}
+          existingEmail={linkAccountData.email}
+          providers={linkAccountData.providers}
+          onLink={(provider) => handleSocialLogin(provider, 'Provider')}
+        />
+      )}
     </div>
   );
 }
