@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AuthProvider } from 'firebase/auth';
 import { googleProvider, facebookProvider, microsoftProvider, appleProvider } from '@/lib/firebase';
+import { PROVIDERS } from '@/lib/constants';
 
 interface LinkAccountModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ export default function LinkAccountModal({
 
   const getProviderButton = (providerId: string) => {
     switch (providerId) {
-      case 'google.com':
+      case PROVIDERS.GOOGLE:
         return (
           <button
             key={providerId}
@@ -39,7 +40,7 @@ export default function LinkAccountModal({
             Sign in with Google
           </button>
         );
-      case 'facebook.com':
+      case PROVIDERS.FACEBOOK:
         return (
           <button
             key={providerId}
@@ -52,7 +53,7 @@ export default function LinkAccountModal({
             Sign in with Facebook
           </button>
         );
-      case 'microsoft.com':
+      case PROVIDERS.MICROSOFT:
         return (
            <button
              key={providerId}
@@ -68,7 +69,7 @@ export default function LinkAccountModal({
              Sign in with Microsoft
            </button>
         );
-      case 'apple.com':
+      case PROVIDERS.APPLE:
         return (
           <button
             key={providerId}
@@ -81,7 +82,7 @@ export default function LinkAccountModal({
             Sign in with Apple
           </button>
         );
-      case 'password':
+      case PROVIDERS.PASSWORD:
         return (
           <div key={providerId} className="w-full text-center p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-600">
              Please log in with your Email and Password first.

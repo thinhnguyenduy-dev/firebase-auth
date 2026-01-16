@@ -5,6 +5,7 @@ import { AuthProvider, signInWithPopup, fetchSignInMethodsForEmail, linkWithCred
 import { auth } from '@/lib/firebase';
 import { login } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { PROVIDERS } from '@/lib/constants';
 
 export const useSocialAuth = () => {
   const [loading, setLoading] = useState(false);
@@ -71,7 +72,14 @@ export const useSocialAuth = () => {
              
              // If email enumeration protection is ON, providers will be empty.
              // In this case, we offer all logical providers so the user can select the correct one.
-             const fallbackProviders = ['google.com', 'facebook.com', 'microsoft.com', 'apple.com', 'password'];
+             // In this case, we offer all logical providers so the user can select the correct one.
+             const fallbackProviders = [
+               PROVIDERS.GOOGLE, 
+               PROVIDERS.FACEBOOK, 
+               PROVIDERS.MICROSOFT, 
+               PROVIDERS.APPLE, 
+               PROVIDERS.PASSWORD
+             ];
              const availableProviders = providers.length > 0 ? providers : fallbackProviders;
 
              setLinkAccountData({
@@ -98,7 +106,13 @@ export const useSocialAuth = () => {
       try {
         setLoading(true);
         const providers = await fetchSignInMethodsForEmail(auth, email);
-        const fallbackProviders = ['google.com', 'facebook.com', 'microsoft.com', 'apple.com', 'password'];
+        const fallbackProviders = [
+          PROVIDERS.GOOGLE, 
+          PROVIDERS.FACEBOOK, 
+          PROVIDERS.MICROSOFT, 
+          PROVIDERS.APPLE, 
+          PROVIDERS.PASSWORD
+        ];
         const availableProviders = providers.length > 0 ? providers : fallbackProviders;
 
         setLinkAccountData({
