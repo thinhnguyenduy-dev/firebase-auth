@@ -3,10 +3,6 @@ import { UserRecord } from 'firebase-admin/auth';
 import { getEmailFromUser, findUserByEmail, getAccountType } from './userSearchService';
 import logger from '../utils/logger';
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export interface LinkResult {
   success: boolean;
   linked: boolean;
@@ -18,10 +14,6 @@ export interface LinkResult {
 }
 
 type LinkType = 'social-into-password' | 'social-into-social';
-
-// ============================================================================
-// Public API
-// ============================================================================
 
 /**
  * Check if the current user needs to be linked with an existing account.
@@ -89,10 +81,6 @@ export async function checkAndLinkAccounts(currentUserUid: string): Promise<Link
     return { success: false, linked: false, message: error.message || 'Failed to check/link accounts' };
   }
 }
-
-// ============================================================================
-// Private Helper Functions
-// ============================================================================
 
 /**
  * Handle password→social link case (requires email verification)
