@@ -1,6 +1,7 @@
 import { auth } from '../config/firebase';
 import { UserRecord } from 'firebase-admin/auth';
 import { getEmailFromUser, findUserByEmail, getAccountType } from './userSearchService';
+import logger from '../utils/logger';
 
 // ============================================================================
 // Types
@@ -34,21 +35,23 @@ type LinkType = 'social-into-password' | 'social-into-social';
  */
 export async function checkAndLinkAccounts(currentUserUid: string): Promise<LinkResult> {
   try {
-    console.log(`[checkAndLinkAccounts] Checking UID: ${currentUserUid}`);
+    logger.info('Checking UID for account linking', { uid: currentUserUid });
     const currentUser = await auth.getUser(currentUserUid);
     
     const email = getEmailFromUser(currentUser);
     
-    console.log(`[checkAndLinkAccounts] User email: ${email}`);
-    console.log(`[checkAndLinkAccounts] User providers:`, currentUser.providerData.map(p => p.providerId));
+    logger.info('User account info', { 
+      email, 
+      providers: currentUser.providerData.map(p => p.providerId) 
+    });
 
     if (!email) {
-      console.log(`[checkAndLinkAccounts] No email found for user ${currentUserUid}`);
+      logger.info('No email found for user', { uid: currentUserUid });
       return { success: true, linked: false, message: 'No email to check for link' };
     }
 
     const { hasPassword: currentHasPassword, hasSocial: currentHasSocial } = getAccountType(currentUser);
-    console.log(`[checkAndLinkAccounts] Current has password: ${currentHasPassword}, has social: ${currentHasSocial}`);
+    logger.debug('Current account type', { hasPassword: currentHasPassword, hasSocial: currentHasSocial });
 
     // Find OTHER accounts with the same email
     const duplicateAccount = await findUserByEmail(email, currentUserUid);
@@ -58,7 +61,11 @@ export async function checkAndLinkAccounts(currentUserUid: string): Promise<Link
     }
 
     const { hasPassword: targetHasPassword, hasSocial: targetHasSocial } = getAccountType(duplicateAccount);
-    console.log(`[checkAndLinkAccounts] Found other account ${duplicateAccount.uid} - password: ${targetHasPassword}, social: ${targetHasSocial}`);
+    logger.info('Found duplicate account', { 
+      uid: duplicateAccount.uid, 
+      hasPassword: targetHasPassword, 
+      hasSocial: targetHasSocial 
+    });
 
     // CASE 1: Current is social-only, target has password
     if (!currentHasPassword && targetHasPassword) {
@@ -78,7 +85,7 @@ export async function checkAndLinkAccounts(currentUserUid: string): Promise<Link
     return { success: true, linked: false, message: 'No link scenario matched' };
 
   } catch (error: any) {
-    console.error('Error in checkAndLinkAccounts:', error);
+    logger.error('Error in checkAndLinkAccounts', { error: error.message, stack: error.stack });
     return { success: false, linked: false, message: error.message || 'Failed to check/link accounts' };
   }
 }
@@ -99,12 +106,13 @@ async function handlePasswordToSocialLink(
     .filter(p => p.providerId !== 'password')
     .map(p => p.providerId);
   
-  console.log(`[checkAndLinkAccounts] Password→Social link detected. Requires verification.`);
-  console.log(`[checkAndLinkAccounts] Social providers: ${socialProviders.join(', ')}`);
+  logger.info('Password→Social link detected, requires verification', { 
+    providers: socialProviders 
+  });
   
   // Delete the newly created password account (user must verify email first)
   await auth.deleteUser(passwordUid);
-  console.log(`Deleted password account ${passwordUid} - user must verify email first`);
+  logger.info('Deleted password account for verification flow', { uid: passwordUid });
   
   return {
     success: true,
@@ -132,17 +140,17 @@ async function linkAccounts(
     ? 'password account' 
     : 'older social account';
   
-  console.log(`[link] Account ${sourceUid} INTO ${targetLabel} ${targetUid}`);
+  logger.info('Linking accounts', { sourceUid, targetUid, targetLabel });
   
   const providersToLink = sourceUser.providerData
     .filter(p => p.providerId !== 'password')
     .map(p => ({ providerId: p.providerId, uid: p.uid }));
   
-  console.log('Providers to link:', providersToLink);
+  logger.debug('Providers to link', { providers: providersToLink });
 
   // Delete source account first to release provider UIDs
   await auth.deleteUser(sourceUid);
-  console.log(`Deleted source account ${sourceUid}`);
+  logger.info('Deleted source account', { uid: sourceUid });
   
   // Link providers to target account
   for (const provider of providersToLink) {
@@ -150,9 +158,15 @@ async function linkAccounts(
       await auth.updateUser(targetUid, {
         providerToLink: { providerId: provider.providerId, uid: provider.uid },
       });
-      console.log(`Linked ${provider.providerId} to ${targetLabel} ${targetUid}`);
+      logger.info('Linked provider to target account', { 
+        provider: provider.providerId, 
+        targetUid 
+      });
     } catch (linkErr: any) {
-      console.error(`Failed to link ${provider.providerId}:`, linkErr.message);
+      logger.error('Failed to link provider', { 
+        provider: provider.providerId, 
+        error: linkErr.message 
+      });
     }
   }
   
@@ -163,3 +177,4 @@ async function linkAccounts(
     
   return { success: true, linked: true, customToken, message };
 }
+

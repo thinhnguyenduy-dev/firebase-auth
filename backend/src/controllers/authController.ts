@@ -7,24 +7,7 @@ import { findUserByEmail } from '../services/userSearchService';
 import { syncUserToDatabase } from '../services/userService';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
-import { CheckLinkRequest, SendVerificationRequest, AddPasswordRequest } from '../schemas/authSchemas'; // Types from schemas if exported, otherwise maintain interfaces or use z.infer
-// Note: We need to export types from schemas or redefine them. 
-// For now, I will trust the Zod middleware to validate body, so I can cast body.
-
-// Redefining types based on what was there, but strictly typed now
-interface CheckLinkBody {
-    currentUserUid: string;
-}
-
-interface SendVerificationBody {
-    email: string;
-}
-
-interface AddPasswordBody {
-    email: string;
-    code: string;
-    password: string;
-}
+import { CheckLinkRequest, SendVerificationRequest, AddPasswordRequest } from '../schemas/authSchemas';
 
 // ============================================================================
 // Account Link Controller
@@ -34,7 +17,7 @@ interface AddPasswordBody {
  * Check and link duplicate accounts.
  */
 export async function checkLink(req: Request, res: Response) {
-  const { currentUserUid } = req.body as CheckLinkBody;
+  const { currentUserUid } = req.body as CheckLinkRequest;
 
   const result = await checkAndLinkAccounts(currentUserUid);
   return res.json(result);
@@ -48,7 +31,7 @@ export async function checkLink(req: Request, res: Response) {
  * Send verification code for adding password to existing OAuth account
  */
 export async function sendVerification(req: Request, res: Response) {
-  const { email } = req.body as SendVerificationBody;
+  const { email } = req.body as SendVerificationRequest;
 
   const existingUser = await findUserByEmail(email);
 
@@ -75,7 +58,7 @@ export async function sendVerification(req: Request, res: Response) {
  * Add password to existing OAuth account after verification
  */
 export async function addPassword(req: Request, res: Response) {
-  const { email, code, password } = req.body as AddPasswordBody;
+  const { email, code, password } = req.body as AddPasswordRequest;
 
   const isValid = verifyCode(email, code);
   if (!isValid) {

@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../config/prisma';
 import { auth } from '../config/firebase';
 import { getEmailFromUser } from './userSearchService';
 import logger from '../utils/logger';
-
-const prisma = new PrismaClient();
 
 /**
  * Sync user data to database.
