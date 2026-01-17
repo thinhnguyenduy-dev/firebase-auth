@@ -72,7 +72,6 @@ export const useSocialAuth = () => {
              
              // If email enumeration protection is ON, providers will be empty.
              // In this case, we offer all logical providers so the user can select the correct one.
-             // In this case, we offer all logical providers so the user can select the correct one.
              const fallbackProviders = [
                PROVIDERS.GOOGLE, 
                PROVIDERS.FACEBOOK, 
