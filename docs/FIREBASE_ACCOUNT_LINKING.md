@@ -12,7 +12,31 @@ To resolve this, we must:
 3.  Ask the user to sign in with that *existing* provider to verify they own the account.
 4.  Link the *new* credential to the existing account.
 
-## Authentication Flow
+## Default Firebase Behavior (Without Custom Logic)
+
+By default, if a user tries to sign in with a "new" provider (e.g., Facebook) but an account already exists with a "trusted" provider (e.g., Google or Password), Firebase **blocks the sign-in** and throws an error.
+
+```text
++------+       +----------+       +----------+
+| User |       | Frontend |       | Firebase |
++--+---+       +----+-----+       +-----+----+
+   |                |                   |
+   | Click Facebook |                   |
+   |--------------->|                   |
+   |                | signIn(Facebook)  |
+   |                |------------------>|
+   |                |                   |
+   |                | Error: Exists     |
+   |                |<------------------|
+   | Show Error     |                   |
+   |<---------------|                   |
+   | "Account link  |                   |
+   |  required"     |                   |
+```
+
+The user is stuck because they can't sign in with Facebook, and the app doesn't tell them *why* or how to fix it (i.e., "Please log in with Google").
+
+## Our Solution: Authentication Flow
 
 ```text
 +------+       +----------+       +----------+       +---------+
