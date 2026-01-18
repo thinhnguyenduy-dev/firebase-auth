@@ -1,6 +1,6 @@
 # Account Linking: "Create Multiple Accounts" Strategy
 
-This document describes how to implement secure account linking using Firebase's **"Create multiple accounts for each identity provider"** setting.
+This document describes the secure account linking implementation using Firebase's **"Create multiple accounts for each identity provider"** setting.
 
 ## Firebase Configuration
 
@@ -42,22 +42,27 @@ This allows the same email to have separate accounts for different providers:
 │           │                        │                                 │
 │           └──────────┬─────────────┘                                │
 │                      ▼                                               │
-│            checkAccountLink(uid)                                     │
+│         POST /api/auth/check-link                                    │
 │                      │                                               │
 └──────────────────────┼───────────────────────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Backend                                      │
 │                                                                      │
-│  POST /api/auth/check-link                                           │
+│  checkAndLinkAccounts(uid)                                           │
 │           │                                                          │
 │           ▼                                                          │
 │  ┌─────────────────────────────────────────────────────────┐        │
-│  │              checkAndLinkAccounts()                      │        │
-│  │                                                          │        │
 │  │  1. Get current user's email (from user or providerData) │        │
 │  │  2. Search for OTHER accounts with same email            │        │
 │  │  3. Determine link case and handle appropriately         │        │
+│  └─────────────────────────────────────────────────────────┘        │
+│           │                                                          │
+│           ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────┐        │
+│  │  LinkResult                                              │        │
+│  │  - linked: bool + customToken (for auto-link cases)      │        │
+│  │  - needsVerification: bool + providers (for pw→social)   │        │
 │  └─────────────────────────────────────────────────────────┘        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -84,9 +89,9 @@ User registers with email/password first, then signs in with Google.
    │                   │                     │   New Google UID   │
    │                   │<─────────────────────────────────────────│
    │                   │                     │                    │
-   │                   │ POST /check-link    │                    │
+   │                   │ POST /auth/check-link                    │
    │                   │────────────────────>│                    │
-   │                   │                     │ listUsers()        │
+   │                   │                     │ findUserByEmail()  │
    │                   │                     │───────────────────>│
    │                   │                     │ deleteUser(google) │
    │                   │                     │───────────────────>│
@@ -99,6 +104,9 @@ User registers with email/password first, then signs in with Google.
    │                   │                     │                    │
    │                   │ signInWithCustomToken                    │
    │                   │────────────────────────────────────────->│
+   │                   │                     │                    │
+   │                   │ POST /auth/login    │                    │
+   │                   │────────────────────>│                    │
    │  Logged in!       │                     │                    │
    │<──────────────────│                     │                    │
 ```
@@ -125,9 +133,9 @@ User has social account, tries to register with email/password.
    │                   │                     │  New password UID  │
    │                   │<─────────────────────────────────────────│
    │                   │                     │                    │
-   │                   │ POST /check-link    │                    │
+   │                   │ POST /auth/check-link                    │
    │                   │────────────────────>│                    │
-   │                   │                     │ listUsers()        │
+   │                   │                     │ findUserByEmail()  │
    │                   │                     │───────────────────>│
    │                   │                     │ ⚠️ Social exists!  │
    │                   │                     │ deleteUser(pw)     │
@@ -139,13 +147,13 @@ User has social account, tries to register with email/password.
    │<──────────────────│                     │                    │
    │                   │                     │                    │
    │ Click "Send Code" │                     │                    │
-   │──────────────────>│ POST /send-verify   │                    │
+   │──────────────────>│ POST /auth/send-verification             │
    │                   │────────────────────>│                    │
    │                   │                     │ Send email         │
    │<────────────────────────────────────────│                    │
    │                   │                     │                    │
    │ Enter code + pw   │                     │                    │
-   │──────────────────>│ POST /add-password  │                    │
+   │──────────────────>│ POST /auth/add-password                  │
    │                   │────────────────────>│                    │
    │                   │                     │ updateUser(email,pw)
    │                   │                     │───────────────────>│
@@ -180,9 +188,9 @@ User signs in with Google, then signs in with Facebook (same email).
    │                   │                     │  New Facebook UID  │
    │                   │<─────────────────────────────────────────│
    │                   │                     │                    │
-   │                   │ POST /check-link    │                    │
+   │                   │ POST /auth/check-link                    │
    │                   │────────────────────>│                    │
-   │                   │                     │ listUsers()        │
+   │                   │                     │ findUserByEmail()  │
    │                   │                     │───────────────────>│
    │                   │                     │ Found Google acct  │
    │                   │                     │ deleteUser(fb)     │
@@ -196,6 +204,9 @@ User signs in with Google, then signs in with Facebook (same email).
    │                   │                     │                    │
    │                   │ signInWithCustomToken                    │
    │                   │────────────────────────────────────────->│
+   │                   │                     │                    │
+   │                   │ POST /auth/login    │                    │
+   │                   │────────────────────>│                    │
    │  Logged in!       │                     │                    │
    │<──────────────────│                     │                    │
 ```
@@ -224,15 +235,16 @@ With "Create multiple accounts" setting, **`user.email` is often `undefined`**. 
 // WRONG - often undefined with this setting
 const email = user.email;
 
-// CORRECT - check both locations
-let email = user.email;
-if (!email && user.providerData.length > 0) {
-  for (const provider of user.providerData) {
+// CORRECT - check both locations (see userSearchService.ts)
+export function getEmailFromUser(user: UserRecord): string | undefined {
+  if (user.email) return user.email;
+  
+  for (const provider of user.providerData || []) {
     if (provider.email) {
-      email = provider.email;
-      break;
+      return provider.email;
     }
   }
+  return undefined;
 }
 ```
 
@@ -241,27 +253,36 @@ if (!email && user.providerData.length > 0) {
 `auth.getUserByEmail(email)` won't find users whose email is only in `providerData`. You must search all users:
 
 ```typescript
-let existingUser;
-try {
-  existingUser = await auth.getUserByEmail(email);
-} catch (e: any) {
-  if (e.code === 'auth/user-not-found') {
-    // Search all users by providerData email
-    const listResult = await auth.listUsers(1000);
-    for (const user of listResult.users) {
-      if (user.email === email) {
-        existingUser = user;
-        break;
-      }
-      for (const provider of user.providerData) {
-        if (provider.email === email) {
-          existingUser = user;
-          break;
-        }
-      }
-      if (existingUser) break;
+// See userSearchService.ts - findUserByEmail()
+export async function findUserByEmail(
+  email: string,
+  excludeUid?: string
+): Promise<UserRecord | null> {
+  // First try the standard lookup
+  try {
+    const user = await auth.getUserByEmail(email);
+    if (!excludeUid || user.uid !== excludeUid) {
+      return user;
+    }
+  } catch (e: any) {
+    if (e.code !== 'auth/user-not-found') {
+      throw e;
     }
   }
+
+  // With "Create multiple accounts" setting, email might only be in providerData
+  const listResult = await auth.listUsers(1000);
+  
+  for (const user of listResult.users) {
+    if (excludeUid && user.uid === excludeUid) continue;
+    
+    const userEmail = getEmailFromUser(user);
+    if (userEmail === email) {
+      return user;
+    }
+  }
+  
+  return null;
 }
 ```
 
@@ -294,10 +315,7 @@ When adding password to social account, you MUST also set email at account level
 await auth.updateUser(uid, { password });
 
 // CORRECT - set email at account level for signInWithEmailAndPassword to work
-await auth.updateUser(uid, { 
-  email: email,    // Required for email/password login!
-  password 
-});
+await auth.updateUser(existingUser.uid, { email, password });
 ```
 
 ### ⚠️ 5. Delete before link
@@ -316,46 +334,106 @@ await auth.updateUser(targetUID, { providerToLink: { providerId, uid } });
 
 ---
 
+## API Endpoints
+
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/api/auth/check-link` | POST | None | Check and link duplicate accounts |
+| `/api/auth/send-verification` | POST | None | Send verification code for adding password |
+| `/api/auth/add-password` | POST | None | Add password to OAuth account after verification |
+| `/api/auth/login` | POST | Bearer Token | Sync user to database after login |
+| `/api/auth/register` | POST | Bearer Token | Create user in database after registration |
+
+---
+
 ## Implementation Files
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| Backend link logic | `backend/src/services/accountLinkService.ts` | `checkAndLinkAccounts()` |
-| User search service | `backend/src/services/userSearchService.ts` | `findUserByEmail()` |
-| Auth controller | `backend/src/controllers/authController.ts` | Route handlers |
-| API routes | `backend/src/routes/auth.ts` | `/check-link`, `/login`, `/register`, etc. |
-| Frontend API | `frontend/src/lib/api.ts` | `checkAccountLink()` |
-| Social auth hook | `frontend/src/hooks/useSocialAuth.ts` | Handles social login with linking |
+| Backend link logic | `backend/src/services/accountLinkService.ts` | `checkAndLinkAccounts()`, `linkAccounts()` |
+| User search service | `backend/src/services/userSearchService.ts` | `findUserByEmail()`, `getEmailFromUser()` |
+| Auth controller | `backend/src/controllers/authController.ts` | `checkLink`, `sendVerification`, `addPassword`, `login`, `register` |
+| API routes | `backend/src/routes/auth.ts` | Route definitions |
+| Frontend API | `frontend/src/lib/api.ts` | `checkAccountLink()`, `login()`, `register()` |
+| Social auth hook | `frontend/src/hooks/useSocialAuth.ts` | `useSocialAuth()` hook for social login |
 | Home page | `frontend/src/app/page.tsx` | Login form |
 | Register page | `frontend/src/app/register/page.tsx` | Registration with link handling |
 | Auth context | `frontend/src/context/AuthContext.tsx` | NO auto-sync |
-| Verification modal | `frontend/src/components/AddPasswordModal.tsx` | Email verification flow |
+| Add password modal | `frontend/src/components/AddPasswordModal.tsx` | Email verification flow |
 
 ---
 
 ## Key Code: checkAndLinkAccounts()
 
 ```typescript
-// CASE 1: Social → Password (SAFE)
+// accountLinkService.ts
+
+// CASE 1: Current is social-only, target has password
 if (!currentHasPassword && targetHasPassword) {
-  // Delete social, link to password account
-  await auth.deleteUser(socialUID);
-  await auth.updateUser(passwordUID, { providerToLink: socialProvider });
-  return { linked: true, customToken };
+  return await linkAccounts(currentUserUid, duplicateAccount.uid, currentUser, 'social-into-password');
 }
 
-// CASE 2: Password → Social (REQUIRES VERIFICATION)
+// CASE 2: Current has password, target is social-only (requires verification)
 if (currentHasPassword && !targetHasPassword && targetHasSocial) {
-  // Delete password account, require verification
-  await auth.deleteUser(passwordUID);
-  return { needsVerification: true, providers: socialProviders, email };
+  return await handlePasswordToSocialLink(currentUserUid, duplicateAccount, email);
 }
 
-// CASE 3: Social → Social (SAFE)
+// CASE 3: Both are social-only
 if (!currentHasPassword && currentHasSocial && !targetHasPassword && targetHasSocial) {
-  // Delete newer, link to older
-  await auth.deleteUser(newerUID);
-  await auth.updateUser(olderUID, { providerToLink: newerProvider });
-  return { linked: true, customToken };
+  return await linkAccounts(currentUserUid, duplicateAccount.uid, currentUser, 'social-into-social');
+}
+```
+
+### linkAccounts() Helper
+
+```typescript
+async function linkAccounts(
+  sourceUid: string,
+  targetUid: string,
+  sourceUser: UserRecord,
+  linkType: LinkType
+): Promise<LinkResult> {
+  const providersToLink = sourceUser.providerData
+    .filter(p => p.providerId !== 'password')
+    .map(p => ({ providerId: p.providerId, uid: p.uid }));
+
+  // Delete source account first to release provider UIDs
+  await auth.deleteUser(sourceUid);
+
+  // Link providers to target account
+  for (const provider of providersToLink) {
+    await auth.updateUser(targetUid, {
+      providerToLink: { providerId: provider.providerId, uid: provider.uid },
+    });
+  }
+
+  const customToken = await auth.createCustomToken(targetUid);
+  return { success: true, linked: true, customToken, message: 'Accounts linked' };
+}
+```
+
+### handlePasswordToSocialLink() Helper
+
+```typescript
+async function handlePasswordToSocialLink(
+  passwordUid: string,
+  socialUser: UserRecord,
+  email: string
+): Promise<LinkResult> {
+  const socialProviders = socialUser.providerData
+    .filter(p => p.providerId !== 'password')
+    .map(p => p.providerId);
+
+  // Delete the newly created password account (user must verify email first)
+  await auth.deleteUser(passwordUid);
+
+  return {
+    success: true,
+    linked: false,
+    needsVerification: true,
+    providers: socialProviders,
+    email: email,
+    message: `Please verify your email to add a password.`,
+  };
 }
 ```
