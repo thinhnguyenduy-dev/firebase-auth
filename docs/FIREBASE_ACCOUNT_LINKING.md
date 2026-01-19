@@ -10,7 +10,7 @@ This document explains the Firebase Console's **"Link accounts that use the same
 2. [Default Firebase Behavior](#default-firebase-behavior)
 3. [The Problem](#the-problem)
 4. [Our Solution: Backend-Orchestrated Linking](#our-solution-backend-orchestrated-linking)
-5. [Authentication Flow Diagram](#authentication-flow-diagram)
+5. [Authentication Flow Diagrams](#authentication-flow-diagrams)
 6. [Implementation Details](#implementation-details)
 7. [Key Scenarios](#key-scenarios)
 
@@ -116,10 +116,13 @@ This application implements a **proactive backend-orchestrated approach** that:
 │                              FRONTEND                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  [1] User clicks social login  ──►  [2] Get OAuth access token from popup  │
+│  [1] User clicks social login  ──►  [2] Get OAuth access token              │
+│      (Google: GIS popup)                                                    │
+│      (Facebook/Microsoft: Firebase popup)                                   │
 │                                              │                              │
 │                                              ▼                              │
 │                                    [3] Send token to backend                │
+│                                        POST /api/auth/social/preflight      │
 │                                                                             │
 └─────────────────────────────────────────────┬───────────────────────────────┘
                                               │
@@ -131,7 +134,7 @@ This application implements a **proactive backend-orchestrated approach** that:
 │  [4] Verify token with provider API (Google/Facebook/Microsoft)             │
 │                          │                                                  │
 │                          ▼                                                  │
-│  [5] Extract email from token                                               │
+│  [5] Extract email from token (via oauthProviderService.ts)                 │
 │                          │                                                  │
 │                          ▼                                                  │
 │  [6] Check Firebase: Does user exist with this email?                       │
@@ -158,90 +161,111 @@ This application implements a **proactive backend-orchestrated approach** that:
 │                          └──────────────┬───────────────┘                   │
 │                                         ▼                                   │
 │                              ✅ User signed in / linked                     │
+│                              Call POST /api/auth/login                      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Authentication Flow Diagram
+## Authentication Flow Diagrams
 
-### Complete Social Login Flow (Sequence)
+### Google Authentication Flow (GIS Token Client)
+
+Google uses the **Google Identity Services (GIS)** library for a cleaner token acquisition:
 
 ```
-┌──────┐     ┌──────────┐     ┌─────────┐     ┌──────────────┐     ┌──────────┐
-│ User │     │ Frontend │     │ Backend │     │OAuth Provider│     │ Firebase │
-└──┬───┘     └────┬─────┘     └────┬────┘     └──────┬───────┘     └────┬─────┘
-   │              │                │                 │                  │
-   │ Click social │                │                 │                  │
-   │ login button │                │                 │                  │
-   │─────────────►│                │                 │                  │
-   │              │                │                 │                  │
-   │              │ Open OAuth     │                 │                  │
-   │              │ popup ─────────────────────────► │                  │
-   │              │                │                 │                  │
-   │              │ ◄───────────────────────────────-│                  │
-   │              │ Access token + credential        │                  │
-   │              │                │                 │                  │
-   │              │ POST /api/auth/social/preflight   │                  │
-   │              │ {provider, accessToken}          │                  │
-   │              │───────────────►│                 │                  │
-   │              │                │                 │                  │
-   │              │                │ Verify token    │                  │
-   │              │                │────────────────►│                  │
-   │              │                │ ◄───────────────│                  │
-   │              │                │ User info       │                  │
-   │              │                │                 │                  │
-   │              │                │ getUserByEmail()│                  │
-   │              │                │─────────────────────────────────── ►│
-   │              │                │                 │                  │
-   │              │                │                 │                  │
-   ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │   CASE A: No existing user       │                  │
-   ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │                │ ◄───────────────────────────────── │
-   │              │                │ user-not-found  │                  │
-   │              │ ◄──────────────│                 │                  │
-   │              │ {action: 'signin'}               │                  │
-   │              │                │                 │                  │
-   │              │ signInWithCredential()           │                  │
-   │              │───────────────────────────────────────────────────► │
-   │              │                │                 │                  │
-   │              │ ◄────────────────────────────────────────────────── │
-   │              │                New user created  │                  │
-   │              │                │                 │                  │
-   ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │   CASE B: User exists - LINK required               │
-   ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │                │ ◄───────────────────────────────── │
-   │              │                │ User with diff providers           │
-   │              │                │                 │                  │
-   │              │                │ createCustomToken(uid)             │
-   │              │                │───────────────────────────────────►│
-   │              │                │ ◄──────────────────────────────────│
-   │              │                │ customToken     │                  │
-   │              │                │                 │                  │
-   │              │ ◄──────────────│                 │                  │
-   │              │ {action: 'link', customToken}    │                  │
-   │              │                │                 │                  │
-   │              │ signInWithCustomToken()          │                  │
-   │              │───────────────────────────────────────────────────► │
-   │              │ ◄────────────────────────────────────────────────── │
-   │              │ Signed in as existing user       │                  │
-   │              │                │                 │                  │
-   │              │ linkWithCredential()             │                  │
-   │              │───────────────────────────────────────────────────► │
-   │              │ ◄────────────────────────────────────────────────── │
-   │              │ Provider linked│                 │                  │
-   │              │                │                 │                  │
-   ├──────────────┼────────────────┼─────────────────┼──────────────────┤
-   │              │ POST /api/auth/login             │                  │
-   │              │───────────────►│                 │                  │
-   │              │ ◄──────────────│                 │                  │
-   │              │                │                 │                  │
-   │ ◄────────────│                │                 │                  │
-   │ ✅ Signed in │                │                 │                  │
-   │              │                │                 │                  │
+┌──────┐     ┌──────────┐     ┌─────────┐     ┌─────────┐     ┌──────────┐
+│ User │     │ Frontend │     │ Backend │     │ Google  │     │ Firebase │
+└──┬───┘     └────┬─────┘     └────┬────┘     └────┬────┘     └────┬─────┘
+   │              │                │               │               │
+   │ Click Google │                │               │               │
+   │ login button │                │               │               │
+   │─────────────►│                │               │               │
+   │              │                │               │               │
+   │              │ GIS token     │               │               │
+   │              │ popup ────────────────────────►│               │
+   │              │                │               │               │
+   │              │ ◄──────────────────────────────│               │
+   │              │ access_token   │               │               │
+   │              │                │               │               │
+   │              │ POST /api/auth/social/preflight│               │
+   │              │ {provider: 'google', accessToken}              │
+   │              │───────────────►│               │               │
+   │              │                │               │               │
+   │              │                │ Verify token  │               │
+   │              │                │──────────────►│               │
+   │              │                │ ◄─────────────│               │
+   │              │                │ user info     │               │
+   │              │                │               │               │
+   │              │                │ getUserByEmail()              │
+   │              │                │───────────────────────────────►│
+   │              │                │ ◄──────────────────────────────│
+   │              │                │               │               │
+   │              │ ◄──────────────│               │               │
+   │              │ {action, customToken?}         │               │
+   │              │                │               │               │
+   │              │ Execute signInWithCredential() or             │
+   │              │ signInWithCustomToken() + linkWithCredential() │
+   │              │────────────────────────────────────────────────►│
+   │              │                │               │               │
+   │              │ POST /api/auth/login           │               │
+   │              │───────────────►│               │               │
+   │              │ ◄──────────────│               │               │
+   │              │                │               │               │
+   │ ◄────────────│                │               │               │
+   │ ✅ Signed in │                │               │               │
+```
+
+### Facebook/Microsoft Authentication Flow (Firebase Popup)
+
+Facebook and Microsoft use **Firebase's signInWithPopup** first, with fallback to backend orchestration:
+
+```
+┌──────┐     ┌──────────┐     ┌─────────┐     ┌──────────┐     ┌──────────┐
+│ User │     │ Frontend │     │ Backend │     │ Provider │     │ Firebase │
+└──┬───┘     └────┬─────┘     └────┬────┘     └────┬─────┘     └────┬─────┘
+   │              │                │               │               │
+   │ Click social │                │               │               │
+   │ login button │                │               │               │
+   │─────────────►│                │               │               │
+   │              │                │               │               │
+   │              │ signInWithPopup()              │               │
+   │              │────────────────────────────────────────────────►│
+   │              │                │               │               ▼
+   │              │                │               │        ┌────────────┐
+   │              │                │               │        │ Popup OK?  │
+   │              │                │               │        └─────┬──────┘
+   │              │                │               │       ┌──────┴──────┐
+   │              │                │               │       ▼             ▼
+   │              │                │               │      YES           NO
+   │              │                │               │       │      (conflict)
+   │              │                │               │       │             │
+   │              │◄───────────────────────────────────────┘             │
+   │              │ User object    │               │                     │
+   │              │                │               │ Extract credential  │
+   │              │                │               │ from error          │
+   │              │ ◄────────────────────────────────────────────────────┘
+   │              │                │               │               │
+   │              │ POST /api/auth/social/preflight│               │
+   │              │───────────────►│               │               │
+   │              │                │ verify token  │               │
+   │              │                │──────────────►│               │
+   │              │ ◄──────────────│               │               │
+   │              │ {action: 'link', customToken}  │               │
+   │              │                │               │               │
+   │              │ signInWithCustomToken()        │               │
+   │              │────────────────────────────────────────────────►│
+   │              │                │               │               │
+   │              │ linkWithCredential()           │               │
+   │              │────────────────────────────────────────────────►│
+   │              │                │               │               │
+   │              │ POST /api/auth/login           │               │
+   │              │───────────────►│               │               │
+   │              │ ◄──────────────│               │               │
+   │              │                │               │               │
+   │ ◄────────────│                │               │               │
+   │ ✅ Signed in │                │               │               │
 ```
 
 ---
@@ -260,9 +284,19 @@ export async function checkSocialAuthConflict(
   // 1. Verify token and get user info from provider
   const oauthUserInfo = await verifyOAuthToken(provider, accessToken);
   const email = oauthUserInfo.email.toLowerCase();
+  const incomingProviderId = oauthUserInfo.providerId;
 
   // 2. Check if user exists in Firebase
-  let existingUser = await auth.getUserByEmail(email);
+  let existingUser;
+  try {
+    existingUser = await auth.getUserByEmail(email);
+  } catch (error: any) {
+    if (error.code === 'auth/user-not-found') {
+      // No existing user - safe to proceed with normal sign-in
+      return { action: 'signin', email };
+    }
+    throw error;
+  }
 
   // 3. Analyze existing providers
   const existingProviders = existingUser.providerData.map(p => p.providerId);
@@ -271,8 +305,21 @@ export async function checkSocialAuthConflict(
 
   // 4. Determine action:
   // - Case A: Already has provider → signin
+  if (hasIncomingProvider) {
+    return { action: 'signin', email };
+  }
+
   // - Case B: Has password → link (preserve password!)
   // - Case C: Has different social → link
+  const customToken = await auth.createCustomToken(existingUser.uid);
+  return {
+    action: 'link',
+    customToken,
+    existingUid: existingUser.uid,
+    email,
+    existingProviders,
+    message: `Linking ${provider} account...`
+  };
 }
 ```
 
@@ -281,23 +328,57 @@ export async function checkSocialAuthConflict(
 The frontend handler in [socialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/lib/socialAuth.ts) executes the backend's decision:
 
 ```typescript
-export async function handleUnifiedSocialAuth(
-  provider: SupportedProvider,
-  accessToken: string,
-  credential: AuthCredential
-): Promise<SocialAuthResult> {
-  // Call preflight check endpoint
-  const backendResult = await socialAuthPreflight(provider, accessToken);
+/**
+ * Execute the authentication action (signin or link).
+ * This is the shared core logic used by all social auth flows.
+ */
+async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthResult> {
+  const { action, customToken, credential, provider, onStatusUpdate } = params;
 
-  if (backendResult.action === 'link') {
+  if (action === 'link') {
+    onStatusUpdate?.(`Linking ${provider} to existing account...`);
+
     // Sign in as existing user with custom token
-    await signInWithCustomToken(auth, backendResult.customToken);
+    await signInWithCustomToken(auth, customToken!);
+    const currentUser = auth.currentUser!;
+
     // Link the new provider
-    await linkWithCredential(auth.currentUser, credential);
-  } else {
-    // Normal sign-in
-    await signInWithCredential(auth, credential);
+    await linkWithCredential(currentUser, credential);
+    await syncUser(currentUser);
+
+    return { success: true, user: currentUser, linked: true };
   }
+
+  // SIGNIN FLOW
+  onStatusUpdate?.('Signing in...');
+  const userCred = await signInWithCredential(auth, credential);
+  await syncUser(userCred.user);
+
+  return { success: true, user: userCred.user, linked: false };
+}
+```
+
+### Frontend: useSocialAuth.ts Hook
+
+The [useSocialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/hooks/useSocialAuth.ts) hook provides a React-friendly interface:
+
+```typescript
+export function useSocialAuth(): UseSocialAuthReturn {
+  const handleSocialLogin = useCallback(async (providerName: SocialProvider) => {
+    if (providerName === 'Google') {
+      // Uses GIS token client
+      tokenClient.current.requestAccessToken();
+      return;
+    }
+
+    if (providerName === 'Facebook' || providerName === 'Microsoft') {
+      // Uses Firebase popup with fallback to backend orchestration
+      const result = await completeSocialAuthFlow(provider, setStatusMessage);
+      // ...
+    }
+  }, []);
+
+  return { handleSocialLogin, initGoogleClient, /* ... */ };
 }
 ```
 
@@ -434,3 +515,16 @@ export async function handleUnifiedSocialAuth(
 
 > [!NOTE]
 > This implementation requires the Firebase Console setting **"Link accounts that use the same email"** to be **enabled** for the linking operations to work correctly.
+
+---
+
+## Related Files
+
+| File | Description |
+|------|-------------|
+| [socialAuthService.ts](file:///projects/learning/firebase-auth/backend/src/services/socialAuthService.ts) | Backend conflict detection and custom token generation |
+| [oauthProviderService.ts](file:///projects/learning/firebase-auth/backend/src/services/oauthProviderService.ts) | OAuth token verification for each provider |
+| [authController.ts](file:///projects/learning/firebase-auth/backend/src/controllers/authController.ts) | API endpoint handlers including `/social/preflight` |
+| [socialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/lib/socialAuth.ts) | Frontend social auth flow execution |
+| [useSocialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/hooks/useSocialAuth.ts) | React hook for social authentication |
+| [api.ts](file:///projects/learning/firebase-auth/frontend/src/lib/api.ts) | Frontend API client functions |
