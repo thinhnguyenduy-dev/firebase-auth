@@ -344,7 +344,7 @@ async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthRe
 
     // Link the new provider
     await linkWithCredential(currentUser, credential);
-    await syncUser(currentUser);
+    await login(currentUser);
 
     return { success: true, user: currentUser, linked: true };
   }
@@ -352,7 +352,7 @@ async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthRe
   // SIGNIN FLOW
   onStatusUpdate?.('Signing in...');
   const userCred = await signInWithCredential(auth, credential);
-  await syncUser(userCred.user);
+  await login(userCred.user);
 
   return { success: true, user: userCred.user, linked: false };
 }

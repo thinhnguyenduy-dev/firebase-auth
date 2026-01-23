@@ -17,7 +17,7 @@ import {
   User
 } from 'firebase/auth';
 import { auth, googleProvider, facebookProvider, microsoftProvider } from './firebase';
-import { socialAuthPreflight, syncUser, SupportedProvider } from './api';
+import { socialAuthPreflight, login, SupportedProvider } from './api';
 
 export interface SocialAuthResult {
   success: boolean;
@@ -143,7 +143,7 @@ async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthRe
     }
 
     await linkWithCredential(currentUser, credential);
-    await syncUser(currentUser);
+    await login(currentUser);
 
     onStatusUpdate?.('Account successfully linked!');
     return { success: true, user: currentUser, linked: true };
@@ -152,7 +152,7 @@ async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthRe
   // SIGNIN FLOW
   onStatusUpdate?.('Signing in...');
   const userCred = await signInWithCredential(auth, credential);
-  await syncUser(userCred.user);
+  await login(userCred.user);
 
   return { success: true, user: userCred.user, linked: false };
 }
@@ -264,7 +264,7 @@ export async function completeSocialAuthFlow(
     // Just sync and return - no need for backend verification
     if (!tokens.fromError && tokens.user) {
       onStatusUpdate?.('Completing sign-in...');
-      await syncUser(tokens.user);
+      await login(tokens.user);
       return { success: true, user: tokens.user, linked: false };
     }
 
