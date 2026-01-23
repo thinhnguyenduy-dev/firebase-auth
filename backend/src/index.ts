@@ -17,10 +17,10 @@ app.get('/', (req, res) => {
 
 // Routes
 import authRoutes from './routes/auth';
-import userRoutes from './routes/userRoutes';
+
 
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
+
 
 // Protected route example
 import { verifyToken, AuthRequest } from './middleware/auth';

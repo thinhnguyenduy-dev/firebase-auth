@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, appleProvider } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { syncUser } from '@/lib/api';
+import { login } from '@/lib/api';
 import { handleGoogleAuthWithToken, completeSocialAuthFlow } from '@/lib/socialAuth';
 
 declare global {
@@ -105,7 +105,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
       if (providerName === 'Apple') {
         setStatusMessage('Signing in with Apple...');
         const result = await signInWithPopup(auth, appleProvider);
-        await syncUser(result.user);
+        await login(result.user);
         router.push('/dashboard');
         return;
       }
