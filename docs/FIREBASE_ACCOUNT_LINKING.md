@@ -274,7 +274,7 @@ Facebook and Microsoft use **Firebase's signInWithPopup** first, with fallback t
 
 ### Backend: socialAuthService.ts
 
-The core logic resides in [socialAuthService.ts](file:///projects/learning/firebase-auth/backend/src/services/socialAuthService.ts):
+The core logic resides in [socialAuthService.ts](../backend/src/services/socialAuthService.ts):
 
 ```typescript
 export async function checkSocialAuthConflict(
@@ -325,7 +325,7 @@ export async function checkSocialAuthConflict(
 
 ### Frontend: socialAuth.ts
 
-The frontend handler in [socialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/lib/socialAuth.ts) executes the backend's decision:
+The frontend handler in [socialAuth.ts](../frontend/src/lib/socialAuth.ts) executes the backend's decision:
 
 ```typescript
 /**
@@ -360,7 +360,7 @@ async function executeAuthAction(params: AuthActionParams): Promise<SocialAuthRe
 
 ### Frontend: useSocialAuth.ts Hook
 
-The [useSocialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/hooks/useSocialAuth.ts) hook provides a React-friendly interface:
+The [useSocialAuth.ts](../frontend/src/hooks/useSocialAuth.ts) hook provides a React-friendly interface:
 
 ```typescript
 export function useSocialAuth(): UseSocialAuthReturn {
@@ -522,9 +522,9 @@ export function useSocialAuth(): UseSocialAuthReturn {
 
 | File | Description |
 |------|-------------|
-| [socialAuthService.ts](file:///projects/learning/firebase-auth/backend/src/services/socialAuthService.ts) | Backend conflict detection and custom token generation |
-| [oauthProviderService.ts](file:///projects/learning/firebase-auth/backend/src/services/oauthProviderService.ts) | OAuth token verification for each provider |
-| [authController.ts](file:///projects/learning/firebase-auth/backend/src/controllers/authController.ts) | API endpoint handlers including `/social/preflight` |
-| [socialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/lib/socialAuth.ts) | Frontend social auth flow execution |
-| [useSocialAuth.ts](file:///projects/learning/firebase-auth/frontend/src/hooks/useSocialAuth.ts) | React hook for social authentication |
-| [api.ts](file:///projects/learning/firebase-auth/frontend/src/lib/api.ts) | Frontend API client functions |
+| [socialAuthService.ts](../backend/src/services/socialAuthService.ts) | Backend conflict detection and custom token generation |
+| [oauthProviderService.ts](../backend/src/services/oauthProviderService.ts) | OAuth token verification for each provider |
+| [authController.ts](../backend/src/controllers/authController.ts) | API endpoint handlers including `/social/preflight` |
+| [socialAuth.ts](../frontend/src/lib/socialAuth.ts) | Frontend social auth flow execution |
+| [useSocialAuth.ts](../frontend/src/hooks/useSocialAuth.ts) | React hook for social authentication |
+| [api.ts](../frontend/src/lib/api.ts) | Frontend API client functions |
