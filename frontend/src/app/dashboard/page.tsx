@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import LinkedAccountsCard from '@/components/LinkedAccountsCard';
 
 export default function DashboardPage() {
   const { user, loading, signOut } = useAuth();
@@ -107,48 +108,44 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Account Status */}
-          <div className="backdrop-blur-xl bg-white/10 rounded-2xl shadow-xl border border-white/20 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Account & Profile Status */}
+          <div className="backdrop-blur-xl bg-white/10 rounded-3xl shadow-xl border border-white/20 p-6 space-y-6">
+            <h2 className="text-xl font-bold text-white mb-4">Account Overview</h2>
+            
+            {/* Account Status Row */}
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <span className="text-white/60 text-sm font-medium">Account Status</span>
-            </div>
-            <p className="text-2xl font-bold text-white">Active</p>
-            <p className="text-emerald-400 text-sm mt-1">Email verified</p>
-          </div>
-
-          {/* Login Providers */}
-          <div className="backdrop-blur-xl bg-white/10 rounded-2xl shadow-xl border border-white/20 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
+              <div>
+                <span className="text-white/60 text-sm font-medium block">Account Status</span>
+                <p className="text-lg font-bold text-white">Active</p>
+                <p className="text-emerald-400 text-sm">Email verified</p>
               </div>
-              <span className="text-white/60 text-sm font-medium">Auth Providers</span>
             </div>
-            <p className="text-2xl font-bold text-white capitalize">{providers.replace('.com', '')}</p>
-            <p className="text-blue-400 text-sm mt-1">Connected</p>
-          </div>
 
-          {/* User ID */}
-          <div className="backdrop-blur-xl bg-white/10 rounded-2xl shadow-xl border border-white/20 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+            <div className="h-px bg-white/10 w-full"></div>
+
+            {/* User ID Row */}
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
                 </svg>
               </div>
-              <span className="text-white/60 text-sm font-medium">User ID</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-white/60 text-sm font-medium block">User ID</span>
+                <p className="text-lg font-bold text-white font-mono truncate">{user.uid}</p>
+                <p className="text-purple-400 text-sm">Unique identifier</p>
+              </div>
             </div>
-            <p className="text-lg font-bold text-white font-mono truncate">{user.uid.substring(0, 12)}...</p>
-            <p className="text-purple-400 text-sm mt-1">Unique identifier</p>
           </div>
+
+          {/* Linked Accounts */}
+          <LinkedAccountsCard user={user} />
         </div>
 
         {/* Backend Integration Card */}

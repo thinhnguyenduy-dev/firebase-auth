@@ -9,6 +9,7 @@ import {
   signInWithCustomToken,
   signInWithCredential,
   signInWithPopup,
+  linkWithPopup,
   linkWithCredential,
   GoogleAuthProvider,
   FacebookAuthProvider,
@@ -16,7 +17,7 @@ import {
   AuthCredential,
   User
 } from 'firebase/auth';
-import { auth, googleProvider, facebookProvider, microsoftProvider } from './firebase';
+import { auth, googleProvider, facebookProvider, microsoftProvider, appleProvider } from './firebase';
 import { socialAuthPreflight, login, SupportedProvider } from './api';
 
 export interface SocialAuthResult {
@@ -45,6 +46,8 @@ function getAuthProvider(provider: SupportedProvider) {
       return facebookProvider;
     case 'microsoft':
       return microsoftProvider;
+    case 'apple':
+      return appleProvider;
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
@@ -68,6 +71,8 @@ export async function getOAuthAccessToken(
     } else if (provider === 'facebook') {
       credential = FacebookAuthProvider.credentialFromResult(result);
     } else if (provider === 'microsoft') {
+      credential = OAuthProvider.credentialFromResult(result);
+    } else if (provider === 'apple') {
       credential = OAuthProvider.credentialFromResult(result);
     }
 
@@ -248,9 +253,15 @@ export async function handleUnifiedSocialAuth(
  * - If popup fails with conflict, sign out and call backend for linking
  */
 export async function completeSocialAuthFlow(
-  provider: 'facebook' | 'microsoft',
+  provider: 'facebook' | 'microsoft' | 'google' | 'apple',
   onStatusUpdate?: (message: string) => void
 ): Promise<SocialAuthResult> {
+  // 1. If user is logged in, treat this as a LINKING operation
+  if (auth.currentUser) {
+     return handleLinkingFlow(auth.currentUser, provider, onStatusUpdate);
+  }
+
+  // 2. Otherwise, treat as SIGN-IN operation
   try {
     onStatusUpdate?.(`Signing in with ${provider}...`);
 
@@ -288,6 +299,58 @@ export async function completeSocialAuthFlow(
     }
 
     return { success: false, error: error.message || 'Failed to sign in' };
+  }
+}
+
+/**
+ * Helper to handle linking flow using linkWithPopup
+ */
+async function handleLinkingFlow(
+  currentUser: User,
+  provider: SupportedProvider, 
+  onStatusUpdate?: (message: string) => void
+): Promise<SocialAuthResult> {
+  const authProvider = getAuthProvider(provider);
+  
+  try {
+    const result = await linkWithPopup(currentUser, authProvider);
+    // Success! 
+    await login(result.user);
+    onStatusUpdate?.('Account successfully linked!');
+    return { success: true, user: result.user, linked: true };
+  } catch (error: any) {
+    if (error.code === 'auth/credential-already-in-use') {
+       // Conflict! Account belongs to someone else.
+       // We can extract credential and try unified flow (maybe merge?)
+       let credential;
+       if (provider === 'google') {
+          credential = GoogleAuthProvider.credentialFromError(error);
+       } else if (provider === 'facebook') {
+          credential = FacebookAuthProvider.credentialFromError(error);
+       } else if (provider === 'microsoft') {
+          credential = OAuthProvider.credentialFromError(error);
+       } else if (provider === 'apple') {
+          credential = OAuthProvider.credentialFromError(error);
+       }
+
+       if (credential) {
+          // Fallback to unified flow for conflict handling
+          return await handleUnifiedSocialAuth(
+             provider,
+             credential.accessToken as string, // Note: might need better token extraction
+             credential,
+             onStatusUpdate
+          );
+       }
+       return { success: false, error: 'This account is already connected to another user.' };
+    }
+    
+    if (error.code === 'auth/popup-closed-by-user') {
+       return { success: false, error: 'Linking cancelled' };
+    }
+
+    console.error('Link Error:', error);
+    return { success: false, error: error.message || 'Failed to link account' };
   }
 }
 
