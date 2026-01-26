@@ -30,7 +30,7 @@ export async function login(req: AuthRequest, res: Response) {
         user: { firebaseUid: uid, providers: firebaseUser.providerData.map(p => p.providerId) }
       });
     }
-
+    console.log('Firebase providers data', firebaseUser.providerData);
     res.json({
       success: true,
       user: {
@@ -124,6 +124,8 @@ export async function socialAuthPreflight(req: Request, res: Response) {
       errorMessage = `Invalid or expired ${provider} access token`;
     } else if (error.message?.includes('No email')) {
       errorMessage = `Could not retrieve email from ${provider} account. Please ensure email permission is granted.`;
+    } else if (error.message?.includes('already linked to a different')) {
+      errorMessage = error.message;
     }
 
     return res.status(400).json({ success: false, error: errorMessage });

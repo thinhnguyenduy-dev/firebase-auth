@@ -61,6 +61,14 @@ export async function checkSocialAuthConflict(
 
   // Case A: User already has this provider - normal sign-in
   if (hasIncomingProvider) {
+    const existingProvider = existingUser.providerData.find(p => p.providerId === incomingProviderId);
+    
+    // Safety check: specific provider email verification
+    if (existingProvider?.email && existingProvider.email.toLowerCase() !== email) {
+        console.log(`[checkSocialAuthConflict] Email mismatch for ${incomingProviderId}: Existing=${existingProvider.email}, Incoming=${email}`);
+        throw new Error(`Your account is already linked to a different ${provider} account (${existingProvider.email}). Please sign in with that account.`);
+    }
+
     console.log(`[checkSocialAuthConflict] User already has ${incomingProviderId} - proceeding with signin`);
     return { action: 'signin', email };
   }
